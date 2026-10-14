@@ -139,6 +139,45 @@ export function toast(msg, ms = 2600) {
   toast.t = setTimeout(() => box.classList.remove('show'), ms);
 }
 
+/**
+ * 頁內對話框，取代瀏覽器的 confirm()／prompt()（那種「網站顯示」視窗會被部分瀏覽器封鎖或勾選停用）。
+ * 回傳 Promise：確認框 → true/false；有 input 時 → 輸入字串或 null（取消）。
+ */
+export function ask({ title = '', message = '', ok = '確定', cancel = '取消', danger = false, input = null, maxlength = 20 } = {}) {
+  return new Promise((resolve) => {
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `
+      <div class="card dialog">
+        ${title ? `<h3>${esc(title)}</h3>` : ''}
+        ${message ? `<p>${esc(message)}</p>` : ''}
+        ${input != null ? `<input class="dlg-input" maxlength="${maxlength}" value="${esc(input)}" autocomplete="off">` : ''}
+        <div class="dlg-actions">
+          <button class="btn" data-r="0">${esc(cancel)}</button>
+          <button class="btn ${danger ? 'btn-danger' : 'btn-yellow'}" data-r="1">${esc(ok)}</button>
+        </div>
+      </div>`;
+    const inp = m.querySelector('.dlg-input');
+    const done = (v) => { document.removeEventListener('keydown', onKey, true); m.remove(); resolve(v); };
+    const yes = () => done(inp ? inp.value : true);
+    const no = () => done(inp ? null : false);
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); no(); }
+      if (e.key === 'Enter') { e.preventDefault(); yes(); }
+    };
+    m.addEventListener('click', (e) => {
+      if (e.target === m) return no();
+      const b = e.target.closest('[data-r]');
+      if (b) (b.dataset.r === '1' ? yes : no)();
+    });
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(m);
+    if (inp) { inp.focus(); inp.select(); } else m.querySelector('[data-r="1"]').focus();
+  });
+}
+
 /** 沒有 config/firebase-config.js 時顯示設定說明。 */
 export function showSetupNeeded(root) {
   root.innerHTML = `

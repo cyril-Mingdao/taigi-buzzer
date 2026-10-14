@@ -6,7 +6,7 @@
  */
 import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
-  serverNow, esc, $, toast, playerLabel, groupLabel, rankBuzzes, leaderboard,
+  serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, OPTION_SETS, optionList, optionText,
 } from './core.js';
 
@@ -183,9 +183,11 @@ export function makeActions(fb, rid, getState) {
       return fb.update(r(), upd).catch((e) => toast(authErrorText(e)));
     },
 
-    setQtype(qtype) {
+    async setQtype(qtype) {
       const s = getState();
-      if (s.meta.state !== 'idle' && !confirm('本題進行中，切換題型會直接進入下一題，確定？')) return;
+      if (s.meta.state !== 'idle' && !(await ask({
+        title: '切換題型', message: '本題進行中，切換題型會直接進入下一題。', ok: '切換並進入下一題',
+      }))) return;
       return meta(s.meta.state === 'idle' ? { qtype }
         : { qtype, state: 'idle', round: String((parseInt(s.meta.round, 10) || 0) + 1), openAt: null, answer: null });
     },
@@ -211,13 +213,15 @@ export function makeActions(fb, rid, getState) {
     },
     async kick(uid) {
       const p = getState().players[uid];
-      if (!confirm(`確定要移除「${playerLabel(p || {})}」？移除後這支手機不能再加入本房間。`)) return;
+      if (!(await ask({
+        title: `移除「${playerLabel(p || {})}」？`, message: '移除後這支手機不能再加入本房間。', ok: '移除', danger: true,
+      }))) return;
       await fb.set(r(`/kicked/${uid}`), true);
       await fb.remove(r(`/players/${uid}`));
     },
-    rename(uid) {
+    async rename(uid) {
       const p = getState().players[uid];
-      const name = prompt('修改姓名／暱稱（20 字內）', p ? p.name : '');
+      const name = await ask({ title: '修改姓名／暱稱', message: '20 字內', input: p ? p.name : '', ok: '儲存' });
       if (name == null) return;
       const v = name.trim().slice(0, 20);
       if (!v) return;
@@ -227,13 +231,15 @@ export function makeActions(fb, rid, getState) {
       fb.runTransaction(r(`/players/${uid}/score`), (v) => (v || 0) + d).catch((e) => toast(authErrorText(e)));
     },
     async resetScores() {
-      if (!confirm('把所有人的分數歸零？')) return;
+      if (!(await ask({ title: '分數歸零', message: '把所有人的分數歸零？', ok: '歸零', danger: true }))) return;
       const patch = {};
       for (const uid of Object.keys(getState().players)) patch[`${uid}/score`] = 0;
       await fb.update(r('/players'), patch);
     },
     async clearRoom() {
-      if (!confirm('結束本次搶答並刪除所有學生姓名與紀錄？此動作無法復原。')) return false;
+      if (!(await ask({
+        title: '結束並清除資料', message: '刪除本房間所有學生姓名與紀錄，此動作無法復原。', ok: '結束並清除', danger: true,
+      }))) return false;
       await fb.remove(r(''));
       await fb.remove(fb.ref(fb.db, `buzzOwners/${fb.auth.currentUser.uid}/${rid}`)).catch(() => {});
       return true;

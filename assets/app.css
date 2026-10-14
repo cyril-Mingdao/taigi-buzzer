@@ -250,3 +250,9 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .ver { color: var(--muted); font-size: .7rem; opacity: .6; }
 @media (max-height: 640px) { .stu .room-cls { padding: 2px; font-size: .9rem; } .stu .status { font-size: 1.05rem; } }
 .card.dialog p { white-space: pre-line; }
+
+/* ── v09：無權限提示 ── */
+.noperm { display: grid; gap: 6px; justify-items: start; background: #3a1414; border: 2px solid var(--red); color: var(--white); border-radius: 12px; padding: 12px 14px; text-align: left; }
+.noperm b { color: #ff8a8a; font-size: 1.1rem; }
+.noperm span { color: var(--grey-l); font-size: .9rem; }
+.card .noperm { margin: 10px 0; }

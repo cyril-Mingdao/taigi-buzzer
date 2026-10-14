@@ -13,12 +13,12 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=8">
+<link rel="stylesheet" href="assets/app.css?v=9">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v8">課堂搶答</span>
+  <span class="title" title="v9">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
@@ -35,12 +35,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=8';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=9';
 import {
   bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=8';
-import { sound } from './assets/sound.js?v=8';
+} from './assets/teacher.js?v=9';
+import { sound } from './assets/sound.js?v=9';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -83,11 +83,20 @@ async function start({ fb, user }) {
     return picker(fb, user);
   }
 
-  // 公開模式：右上角放「教師登入」
-  $('#who').innerHTML = '<button class="btn sm btn-yellow" id="bLogin">教師登入</button>';
-  $('#bLogin').onclick = async () => {
-    try { await googleSignIn(); location.reload(); } catch (e) { if (e.code !== 'auth/popup-closed-by-user') toast(authErrorText(e)); }
-  };
+  // 公開模式：右上角放「教師登入」；已用非教師的 Google 帳號登入時改成帳號選單，並提示無權限
+  const noPerm = !!user && !user.isAnonymous;
+  if (noPerm) {
+    mountAccountMenu(fb, user);
+  } else {
+    $('#who').innerHTML = '<button class="btn sm btn-yellow" id="bLogin">教師登入</button>';
+    $('#bLogin').onclick = async () => {
+      try {
+        const u = await googleSignIn();
+        if (!isTeacherUser(u)) toast('您無權限建立房間或請切換帳號', 4000);
+        setTimeout(() => location.reload(), isTeacherUser(u) ? 0 : 1200);
+      } catch (e) { if (e.code !== 'auth/popup-closed-by-user') toast(authErrorText(e)); }
+    };
+  }
   if (!user) {
     try { user = (await fb.signInAnonymously(fb.auth)).user; } catch (e) {
       main.innerHTML = `<div class="card narrow center"><h2>無法連線</h2><p>${esc(authErrorText(e))}</p></div>`;
@@ -95,11 +104,11 @@ async function start({ fb, user }) {
     }
   }
   if (rid) return enterRoom(fb, rid, { owner: false });
-  publicList(fb);
+  publicList(fb, noPerm ? user : null);
 }
 
 /** 公開房間清單：各老師的房間分開列出，即時更新，點選後投影該房間。 */
-function publicList(fb) {
+function publicList(fb, noPermUser = null) {
   main.innerHTML = '<p class="muted center">讀取房間清單…</p>';
   const off = fb.onValue(fb.ref(fb.db, 'buzzLive'), (snap) => {
     const day = Date.now() - 24 * 3600 * 1000;
@@ -110,6 +119,9 @@ function publicList(fb) {
     patch(main, `
       <div class="rooms-page">
         <h2>進行中的房間</h2>
+        ${noPermUser ? `<div class="noperm" role="alert"><b>您無權限建立房間或請切換帳號</b>
+          <span>目前登入：${esc(noPermUser.email || '')}。只有授權的教師帳號能建立房間；你仍可選下方房間觀看。</span>
+          <button class="btn sm btn-yellow" data-acct-switch>⇄ 切換帳號</button></div>` : ''}
         <p class="muted">選擇要投影的房間。老師請用手機按右上角「教師登入」建立房間並操作。</p>
         ${rooms.length ? `<div class="room-grid">${rooms.map((r) => `
           <button class="room-card" data-rid="${esc(r.rid)}">
@@ -121,6 +133,14 @@ function publicList(fb) {
           </button>`).join('')}</div>`
           : '<div class="card center"><h3>目前沒有進行中的房間</h3><p>老師建立房間後會自動出現在這裡。</p></div>'}
       </div>`);
+  });
+  main.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-acct-switch]')) return;
+    try {
+      const u = await googleSignIn();
+      if (!isTeacherUser(u)) toast('您無權限建立房間或請切換帳號', 4000);
+      setTimeout(() => location.reload(), isTeacherUser(u) ? 0 : 1200);
+    } catch (err) { if (err.code !== 'auth/popup-closed-by-user') toast(authErrorText(err)); }
   });
   main.onclick = (e) => {
     const c = e.target.closest('.room-card');

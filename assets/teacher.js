@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=8';
+} from './core.js?v=9';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -39,16 +39,16 @@ export async function teacherBoot(root) {
         <div class="card center narrow">
           <h2>教師登入</h2>
           <p>請用學校 Google 帳號（@ms.mingdao.edu.tw）登入。</p>
-          ${who ? `<p class="warn">${esc(who)} 不在教師名單內。</p>` : ''}
+          ${who ? `<p class="noperm" role="alert"><b>您無權限建立房間或請切換帳號</b><span>目前登入：${esc(who)}</span></p>` : ''}
           <div class="row center">
-            <button class="btn btn-yellow" id="tLogin">Google 登入</button>
-            ${who ? '<button class="btn" id="tOut">換帳號</button>' : ''}
+            <button class="btn btn-yellow" id="tLogin">${who ? '⇄ 切換帳號' : 'Google 登入'}</button>
+            ${who ? '<button class="btn" id="tOut">登出</button>' : ''}
           </div>
           <p class="note" id="tNote">${esc(msg)}</p>
         </div>`;
       $('#tLogin', root).onclick = async () => {
         try {
-          if (user) await fb.signOut(fb.auth);
+          // 直接開 Google 選帳號視窗（先登出再開會失去點擊手勢而被擋）
           const u = await googleSignIn();
           user = u;
           if (isTeacherEmail(u.email)) resolve({ fb, user: u });

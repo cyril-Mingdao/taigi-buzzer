@@ -202,3 +202,43 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .opts .btn.picked { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
 .opts .btn.correct { background: var(--green); border-color: var(--green); color: var(--white); }
 .opts .btn.wrong { background: var(--red); border-color: var(--red); color: var(--white); }
+
+/* ── v06：公開房間清單、頒獎台、多選項 ── */
+.rooms-page { display: grid; gap: 12px; }
+.room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+.room-card { display: grid; gap: 6px; text-align: left; background: var(--white); color: var(--black); border: 3px solid transparent; border-radius: var(--radius); padding: 16px 18px; cursor: pointer; font: inherit; }
+.room-card:hover, .room-card:focus-visible { border-color: var(--yellow); outline: none; transform: translateY(-2px); }
+.rc-code { font-size: 2rem; font-weight: 900; letter-spacing: .12em; }
+.rc-owner { font-weight: 800; font-size: 1.1rem; }
+.rc-meta { color: #555; font-size: .9rem; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.end-row { justify-content: flex-end; margin-top: 10px; }
+.chip b { margin-left: 6px; }
+.ended-wrap { display: grid; gap: 16px; max-width: 1100px; margin: 0 auto; }
+.ended-ctl { max-width: 640px; width: 100%; justify-self: center; }
+.ended-title { text-align: center; font-size: clamp(2rem, 6vh, 3.5rem); color: var(--yellow); margin: 0; }
+.podium { display: flex; justify-content: center; align-items: flex-end; gap: clamp(8px, 2vw, 24px); margin: 10px 0 18px; }
+.pod { background: var(--white); color: var(--black); border-radius: var(--radius) var(--radius) 0 0; text-align: center; padding: 14px 10px; width: clamp(110px, 22vw, 260px); display: grid; gap: 4px; align-content: start; }
+.pod-1 { min-height: clamp(180px, 34vh, 340px); background: var(--yellow); }
+.pod-2 { min-height: clamp(150px, 27vh, 270px); }
+.pod-3 { min-height: clamp(120px, 21vh, 210px); }
+.pod-medal { font-size: clamp(2rem, 7vh, 4rem); line-height: 1; }
+.pod-title { font-weight: 900; font-size: 1.1rem; }
+.pod-name { font-weight: 900; font-size: clamp(1.1rem, 3.4vh, 2rem); word-break: break-all; }
+.pod-score { font-weight: 800; font-size: clamp(1rem, 3vh, 1.6rem); }
+.board.rest { max-width: 640px; width: 100%; margin: 0 auto; }
+.opts.many { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.opts.many .btn { font-size: 1.8rem; min-height: 9vh; }
+.answer-view.big.many .bar .opt { font-size: 1.8rem; }
+.answer-view.big.many .bar .track { height: 30px; }
+.answer-view.big.many .bars { gap: 4px; }
+
+/* ── v07：班級名稱 ── */
+.cls-tag { display: inline-block; background: var(--yellow); color: var(--black); font-weight: 900; border-radius: 8px; padding: 2px 12px; margin-right: 10px; vertical-align: middle; }
+.stage-head .cls-tag { font-size: 1.6rem; }
+.cls-tag.big { font-size: 1.8rem; margin: 0; }
+.rc-class { font-size: 1.4rem; font-weight: 900; background: var(--yellow); justify-self: start; padding: 0 10px; border-radius: 8px; }
+.room-cls { text-align: center; background: var(--yellow); color: var(--black); font-weight: 900; border-radius: 10px; padding: 6px; }
+.new-room { display: grid; gap: 10px; }
+.new-room label { display: grid; gap: 4px; font-weight: 700; }
+.new-room input { padding: 12px; border: 2px solid var(--black); border-radius: 10px; font-size: 1.15rem; }
+.settings input[data-set] { background: var(--black); color: var(--white); border: 1px solid var(--muted); border-radius: 8px; padding: 6px; max-width: 64%; }

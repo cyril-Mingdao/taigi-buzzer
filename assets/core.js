@@ -37,22 +37,45 @@ export const OTHER_CLASS = '其他';
 
 /* ── 房間預設值 ── */
 export const DEFAULT_META = {
-  phase: 'lobby',        // lobby：大 QR 等人加入；game：進入搶答
+  phase: 'lobby',        // lobby：大 QR 等人加入；game：進入搶答；ended：活動結束（公開頁顯示頒獎台）
   state: 'idle',         // idle：準備（此時按＝偷跑）；open：開放搶答；locked：鎖定
   round: '1',            // 字串，因為規則裡要跟路徑 $round 比對
-  countdownSec: 10,      // 0 = 不倒數
+  countdownSec: 0,       // 作答／搶答倒數秒數；0 = 不限（老師在設定裡選）
   penaltySec: 3,         // 偷跑鎖幾秒；-1 = 本題不能搶；0 = 不處罰
   groupMode: 'none',     // none 個人賽｜first 一組只算第一個按的｜each 每人各自計算｜single 一組只限一台手機
   groupCount: 6,
   joinMode: 'approve',   // approve 老師核准｜auto 自動核准
-  qtype: 'buzz',         // buzz 搶答題（搶到者口頭回答，老師按 ✓／✗）｜answer 作答題（全班在手機選答案）
-  options: 'ABCD',       // 作答題的選項組
-  wrongPts: 0,           // 搶答題答錯扣幾分（0 或負數）
-  // answer：作答題老師公布的正解（未公布時不存在）
+  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜abcd 選擇 A–D｜aj 選擇 A–J
+  wrongPts: 0,           // 搶答答錯扣幾分（0 或負數）
+  // answer：是非／選擇題老師選的標準答案（未公布時不存在）
 };
-export const QTYPES = { buzz: '搶答題', answer: '作答題' };
-export const OPTION_SETS = { OX: '⭕ ❌', AB: 'A B', ABC: 'A B C', ABCD: 'A B C D', ABCDE: 'A B C D E' };
-export const optionList = (set) => (set === 'OX' ? ['O', 'X'] : set.split(''));
+export const QTYPES = { buzz: '搶答', tf: '是非', abcd: '選擇 A–D', aj: '選擇 A–J' };
+export const isChoice = (m) => m.qtype !== 'buzz';
+/** 各題型的選項；舊版 qtype 'answer' 依 options 欄位相容。 */
+export function optionList(m) {
+  if (m.qtype === 'tf') return ['O', 'X'];
+  if (m.qtype === 'abcd') return ['A', 'B', 'C', 'D'];
+  if (m.qtype === 'aj') return 'ABCDEFGHIJ'.split('');
+  if (m.qtype === 'answer') return m.options === 'OX' ? ['O', 'X'] : String(m.options || 'ABCD').split('');
+  return [];
+}
+
+/* ── 計分：答對 10 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1 ── */
+export const CORRECT_PTS = 10;
+export const SPEED_BONUS = [5, 4, 3, 2, 1];
+/** 某一題的得分表 { uid: 分數 }（key＝標準答案；answers＝{ uid: { c, at } }）。 */
+export function choicePoints(answers, key) {
+  const pts = {};
+  if (!key) return pts;
+  Object.entries(answers || {})
+    .filter(([, a]) => a && a.c === key)
+    .sort((a, b) => a[1].at - b[1].at || (a[0] < b[0] ? -1 : 1))
+    .forEach(([uid], i) => { pts[uid] = CORRECT_PTS + (SPEED_BONUS[i] || 0); });
+  return pts;
+}
+
+/** 成績存到 Google 雲端硬碟用的 Apps Script 網頁應用程式網址（apps-script/Code.gs 部署後填入）。 */
+export const SAVE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzkrq6hIPQiatK3I03FvGaifjOWV7mBowm_8bJWkm7vm-GndJeTx7jyHB2lvwarwn1P6Q/exec';
 export const optionText = (c) => ({ O: '⭕', X: '❌' }[c] || c);
 export const GROUP_MODES = {
   none: '個人賽（不分組）',
@@ -106,6 +129,16 @@ export function currentUser() {
   });
 }
 
+/** 存成績前重新驗證一次教師身分，取得 Google access token（Apps Script 用它確認是教師）。 */
+export async function googleAccessToken() {
+  const provider = new fb.GoogleAuthProvider();
+  provider.addScope('email');
+  provider.setCustomParameters({ login_hint: fb.auth.currentUser.email || '' });
+  const res = await fb.reauthenticateWithPopup(fb.auth.currentUser, provider);
+  const cred = fb.GoogleAuthProvider.credentialFromResult(res);
+  return cred && cred.accessToken;
+}
+
 export async function googleSignIn() {
   const provider = new fb.GoogleAuthProvider();
   provider.setCustomParameters({ hd: 'ms.mingdao.edu.tw', prompt: 'select_account' });
@@ -128,6 +161,10 @@ export function authErrorText(e) {
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const groupLabel = (g) => (g ? `第 ${g} 組` : '');
+/** 房間班級名稱（老師建房時輸入）；去掉檔名不能用的字元。 */
+export const cleanClassName = (v) => String(v || '').replace(/[\\/:*?"<>|\r\n]/g, '').trim().slice(0, 20);
+/** 民國日期，例如 1151014 */
+export const rocDate = (d = new Date()) => `${d.getFullYear() - 1911}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 export const playerLabel = (p) => [p.cls && p.cls !== OTHER_CLASS ? p.cls : '', p.name].filter(Boolean).join(' ');
 
 export function toast(msg, ms = 2600) {

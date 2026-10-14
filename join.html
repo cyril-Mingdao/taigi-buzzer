@@ -22,7 +22,7 @@
 import {
   loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
-  optionList, optionText,
+  optionList, optionText, isChoice, choicePoints, leaderboard, CORRECT_PTS,
 } from './assets/core.js';
 import { sound } from './assets/sound.js';
 
@@ -99,6 +99,7 @@ async function boot() {
       buzz: ((v.buzzes || {})[meta.round] || {})[uid] || null,
       foul: ((v.fouls || {})[meta.round] || {})[uid] || null,
       answer: ((v.answers || {})[meta.round] || {})[uid] || null,
+      roundAnswers: (v.answers || {})[meta.round] || {},
       judge: ((v.judges || {})[meta.round] || {})[uid] || null,
       ranked: rankBuzzes((v.buzzes || {})[meta.round], players, meta),
     };
@@ -107,7 +108,7 @@ async function boot() {
     render();
   }, (e) => { main.innerHTML = `<div class="card center"><h2>無法讀取房間</h2><p>${esc(authErrorText(e))}</p></div>`; });
 
-  setInterval(() => { if (s && s.foul && s.meta.qtype !== 'answer') render(); }, 250);
+  setInterval(() => { if (s && s.foul && !isChoice(s.meta)) render(); }, 250);
 
   function effects() {
     const m = s.meta;
@@ -152,7 +153,7 @@ async function boot() {
         }).join('')}</select></label>`;
     main.innerHTML = `
       <div class="card">
-        <h2>加入搶答 <small class="muted">${rid}</small></h2>
+        <h2>加入搶答 <small class="muted">${m.className ? `${esc(m.className)}・` : ''}${rid}</small></h2>
         <form id="jf">
           <label>班級<select id="cls" required>${classOptions(p.cls)}</select></label>
           <label>${m.groupMode === 'none' ? '姓名' : '姓名／暱稱'}<input id="nm" maxlength="20" required value="${esc(p.name || '')}" autocomplete="off"></label>
@@ -183,7 +184,7 @@ async function boot() {
 
   function header() {
     const me = s.me;
-    return `<div class="me"><div><div class="name">${esc(me.name)}</div>
+    return `${s.meta.className ? `<div class="room-cls">${esc(s.meta.className)}・課堂搶答</div>` : ''}<div class="me"><div><div class="name">${esc(me.name)}</div>
       <div class="muted">${esc([me.cls, groupLabel(me.group)].filter(Boolean).join('・'))}</div></div>
       <div class="score">${me.score || 0} 分</div></div>`;
   }
@@ -200,8 +201,25 @@ async function boot() {
     if (m.phase === 'lobby') {
       return void (main.innerHTML = `${header()}<div class="card center"><h2>✅ 已加入！</h2><p>等老師開始…</p></div>`);
     }
-    if (m.qtype === 'answer') return renderAnswer();
+    if (m.phase === 'ended') return renderEnded();
+    if (isChoice(m)) return renderAnswer();
     renderBuzz();
+  }
+
+  /** 活動結束：顯示自己（或自己組）的名次與分數。 */
+  function renderEnded() {
+    const rows = leaderboard(s.players, s.meta);
+    let rank = 0;
+    rows.forEach((u, i) => { if (i === 0 || u.score !== rows[i - 1].score) rank = i + 1; u.rank = rank; });
+    const grouped = (s.meta.groupMode === 'first' || s.meta.groupMode === 'single') && s.me.group;
+    const mine = rows.find((u) => u.key === (grouped ? `g${s.me.group}` : uid));
+    const medal = { 1: '🥇 冠軍', 2: '🥈 亞軍', 3: '🥉 季軍' };
+    const html = `${header()}<div class="card center">
+      <h2>🏁 活動結束</h2>
+      ${mine ? `<p style="font-size:2rem;font-weight:900;margin:.3em 0">${medal[mine.rank] || `第 ${mine.rank} 名`}</p>
+        <p>${grouped ? `${esc(mine.name)}共 ` : ''}<b>${mine.score}</b> 分</p>` : ''}
+      <p class="muted">請看大螢幕的頒獎台！</p></div>`;
+    if (main._html !== html) { main._html = html; main.innerHTML = html; }
   }
 
   function myRank() {
@@ -220,7 +238,7 @@ async function boot() {
     if (s.buzz || pending === `buzz${m.round}`) {
       cls = s.judge === 'right' ? 'won' : 'done';
       label = rank ? `第 ${rank.n} 名` : '已按下';
-      status = s.judge === 'right' ? '🎉 答對了！' : s.judge === 'wrong' ? '答錯了，下次加油' : '已搶答，等老師叫你';
+      status = s.judge === 'right' ? `🎉 答對了！+${CORRECT_PTS}` : s.judge === 'wrong' ? '答錯了，下次加油' : '已搶答，等老師叫你';
       enabled = false;
     } else if (groupTaken) {
       cls = 'off'; label = `第 ${rank.n} 名`; status = '同組隊友已搶到'; enabled = false;
@@ -257,17 +275,18 @@ async function boot() {
 
   function renderAnswer() {
     const m = s.meta;
-    const opts = optionList(m.options);
+    const opts = optionList(m);
     const mine = s.answer ? s.answer.c : (pending && pending.startsWith(`ans${m.round}:`) ? pending.split(':')[1] : null);
     const canPick = m.state === 'open' && !mine;
     let status;
-    if (m.answer) status = !mine ? `正解是 ${optionText(m.answer)}，你沒有作答` : mine === m.answer ? '🎉 答對了！+1' : `答錯了，正解是 ${optionText(m.answer)}`;
+    const got = m.answer ? (choicePoints(s.roundAnswers, m.answer)[uid] || 0) : 0;
+    if (m.answer) status = !mine ? `答案是 ${optionText(m.answer)}，你沒有作答` : mine === m.answer ? `🎉 答對了！+${got}` : `答錯了，答案是 ${optionText(m.answer)}`;
     else if (mine) status = '已送出，等老師公布答案';
     else if (m.state === 'open') status = '請選答案（只能選一次）';
     else if (m.state === 'locked') status = '時間到';
     else status = `第 ${esc(m.round)} 題・等老師說開始…`;
     const html = `${header()}<div class="status">${status}</div>
-      <div class="opts">${opts.map((o) => {
+      <div class="opts ${opts.length > 5 ? 'many' : ''}">${opts.map((o) => {
         let c = '';
         if (m.answer && o === m.answer) c = 'correct';
         else if (m.answer && o === mine) c = 'wrong';

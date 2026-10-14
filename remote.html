@@ -14,10 +14,14 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・遙控</title>
 <link rel="stylesheet" href="assets/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   .remote { display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
   .remote .tabs { position: sticky; top: 0; background: var(--black); padding: 8px 0; z-index: 5; }
-  .remote .tabs .btn { flex: 1; }
+  .remote .tabs .btn { flex: 1; padding-left: 4px; padding-right: 4px; }
+  .join-info { display: grid; gap: 10px; justify-items: center; text-align: center; }
+  .join-info .qrbox { width: min(78vw, 320px); }
+  .join-info .stat { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 </style>
 </head>
 <body>
@@ -30,16 +34,29 @@
 <main class="wrap-page" id="main"><p class="muted center">載入中…</p></main>
 
 <script type="module">
-import { normalizeRoom, $, toast } from './assets/core.js';
+import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js';
 import {
   teacherBoot, mountAccountMenu, watchRoom, makeActions, runJobs, remainingSec, patch,
-  orderHTML, answerHTML, boardHTML, controlsHTML, playersHTML, settingsHTML, bindControls,
+  orderHTML, answerHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
 } from './assets/teacher.js';
+
+const base = new URL('./', location.href).href;
+const joinUrl = (id) => `${base}join.html?room=${id}`;
+let qrData = null;
+function qrImg(text) {
+  if (!qrData) {
+    const box = document.createElement('div');
+    new QRCode(box, { text, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M });
+    const c = box.querySelector('canvas');
+    qrData = c ? c.toDataURL() : (box.querySelector('img') || {}).src;
+  }
+  return `<img alt="QR code" src="${qrData}">`;
+}
 
 const main = $('#main');
 const rid = normalizeRoom(new URL(location.href).searchParams.get('room'));
 if (!rid) {
-  main.innerHTML = '<div class="card narrow center"><h2>缺少房間碼</h2><p>請從投影頁的「📱 手機遙控」掃描 QR code 進入。</p></div>';
+  main.innerHTML = `<div class="card narrow center"><h2>缺少房間碼</h2><p>請到首頁登入後建立或選擇房間。</p><a class="btn btn-yellow" href="${base}">回首頁</a></div>`;
 } else {
   const session = await teacherBoot(main);
   if (session) start(session);
@@ -50,15 +67,16 @@ async function start({ fb, user }) {
   const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
   if (!meta) { main.innerHTML = `<div class="card narrow center"><h2>房間 ${rid} 不存在或已清除</h2></div>`; return; }
   if (meta.ownerUid !== user.uid) { main.innerHTML = '<div class="card narrow center"><h2>這個房間不是你建立的</h2><p>請用建立房間的同一個 Google 帳號登入。</p></div>'; return; }
-  $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
+  $('#roomTag').hidden = false; $('#roomTag').textContent = meta.className ? `${meta.className}・${rid}` : rid;
 
   let s = null;
-  let tab = 'q';
+  let tab = 'j';
   const act = makeActions(fb, rid, () => s);
   main.innerHTML = `
     <div class="remote">
       <div class="panel" id="ctl"></div>
       <div class="tabs row">
+        <button class="btn sm" data-tab="j">加入</button>
         <button class="btn sm" data-tab="q">本題</button>
         <button class="btn sm" data-tab="p">名單</button>
         <button class="btn sm" data-tab="b">排行榜</button>
@@ -66,17 +84,18 @@ async function start({ fb, user }) {
       </div>
       <div class="panel" id="body"></div>
     </div>`;
-  bindControls(main, act, { onCleared: () => { main.innerHTML = '<div class="card narrow center"><h2>已結束並清除資料</h2></div>'; } });
+  bindControls(main, act, { onCleared: () => { main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${base}">回首頁</a></div>`; } });
   main.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
     if (t) { tab = t.dataset.tab; render(); }
   });
 
   watchRoom(fb, rid, (next) => {
-    if (!next) { main.innerHTML = '<div class="card narrow center"><h2>房間已結束</h2></div>'; return; }
+    if (!next) { main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${base}">回首頁</a></div>`; return; }
     s = next;
     render();
     runJobs(s, act);
+    syncLive(fb, rid, s);
   });
   setInterval(() => {
     if (!s) return;
@@ -92,10 +111,22 @@ async function start({ fb, user }) {
     const pend = Object.values(s.players).filter((p) => !p.approved).length;
     main.querySelector('[data-tab="p"]').textContent = pend ? `名單（${pend} 待核准）` : '名單';
     let html;
-    if (tab === 'p') html = playersHTML(s);
+    const m = s.meta;
+    if (tab === 'j') {
+      const ok = Object.values(s.players).filter((p) => p.approved).length;
+      html = `<div class="join-info">
+        <div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div><div class="code">${rid}</div>
+          <a class="url" href="${esc(joinUrl(rid))}" target="_blank" rel="noopener">${esc(joinUrl(rid))}</a></div>
+        ${m.className ? `<div class="cls-tag big">${esc(m.className)}</div>` : ''}
+        <div class="stat"><span class="badge st-${m.phase === 'ended' ? 'locked' : m.state}">${QTYPES[m.qtype] || ''}・${stateText(m)}</span>
+          <span class="badge st-idle">已加入 ${ok} 人</span>${pend ? `<span class="badge st-open">待核准 ${pend}</span>` : ''}</div>
+        <p class="muted">教室電腦打開 <b>${esc(base)}</b>（不用登入）點選房間 ${rid} 即可投影。</p>
+      </div>`;
+    } else if (tab === 'p') html = playersHTML(s);
     else if (tab === 'b') html = `${boardHTML(s)}`;
     else if (tab === 's') html = `<div class="settings">${settingsHTML(s)}</div>`;
-    else if (s.meta.qtype === 'answer') html = s.meta.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : answerHTML(s);
+    else if (m.phase === 'ended') html = podiumHTML(s);
+    else if (isChoice(m)) html = m.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : answerHTML(s);
     else html = orderHTML(s);
     patch($('#body'), html);
   }

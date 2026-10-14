@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   【著作權聲明】
-  台語課堂搶答（投影頁）— 教師投影 QR code、學生名單、搶答順序與作答統計
+  台語課堂搶答（投影頁）— 公開房間清單、QR code、學生名單、搶答順序、作答統計與頒獎台；教師登入後可建立與控制房間
   Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
   本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
   未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
@@ -20,6 +20,7 @@
 <header class="topbar">
   <span class="title">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
+  <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
   <button class="btn sm" id="bRemote" hidden>📱 手機遙控</button>
   <button class="btn sm" id="bDrawer" hidden>⚙ 名單／設定</button>
@@ -33,12 +34,11 @@
   <div class="panel" id="dPlayers"></div>
   <div class="panel settings" id="dSettings"></div>
 </aside>
-
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel } from './assets/core.js';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js';
 import {
-  teacherBoot, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec, patch,
-  orderHTML, answerHTML, boardHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText,
+  bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
+  patch, orderHTML, answerHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
 } from './assets/teacher.js';
 import { sound } from './assets/sound.js';
 
@@ -53,83 +53,160 @@ function qrImg(text) {
   }
   return `<img alt="QR code" src="${qrCache.get(text)}">`;
 }
-const joinUrl = (rid) => new URL(`join.html?room=${rid}`, location.href).href;
-const remoteUrl = (rid) => new URL(`remote.html?room=${rid}`, location.href).href;
+const base = new URL('./', location.href).href;
+const joinUrl = (rid) => `${base}join.html?room=${rid}`;
+const remoteUrl = (rid) => `${base}remote.html?room=${rid}`;
+const isPhone = () => window.matchMedia('(max-width: 820px)').matches;
+const PHASE_TEXT = { lobby: '等待加入', game: '進行中', ended: '已結束' };
 
 /* ── 頂列按鈕 ── */
 $('#bFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
 $('#bSound').onclick = (e) => { sound.setMuted(!sound.muted); e.target.textContent = sound.muted ? '🔇 音效關' : '🔊 音效開'; };
 $('#bDrawer').onclick = () => $('#drawer').classList.toggle('open');
 $('#bClose').onclick = () => $('#drawer').classList.remove('open');
+$('#bBack').onclick = () => { location.href = base; };
 
-const session = await teacherBoot(main);
-if (session) start(session);
+const boot = await bootFirebase(main);
+if (boot) start(boot);
 
+/* 進入點：教師帳號 → 教師模式；未登入（或非教師）→ 公開投影模式，不用登入就能選房間觀看 */
 async function start({ fb, user }) {
-  mountAccountMenu(fb, user);
   const rid = normalizeRoom(new URL(location.href).searchParams.get('room'));
-  if (rid) {
-    const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
-    if (meta && meta.ownerUid === user.uid) return enterRoom(fb, rid);
-    toast(meta ? '這個房間不是你建立的' : `房間 ${rid} 不存在或已清除`);
-    history.replaceState(null, '', location.pathname);
+  if (isTeacherUser(user)) {
+    mountAccountMenu(fb, user);
+    if (rid) {
+      const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
+      if (meta) return enterRoom(fb, rid, { owner: meta.ownerUid === user.uid });
+      toast(`房間 ${rid} 不存在或已關閉`);
+      history.replaceState(null, '', location.pathname);
+    }
+    return picker(fb, user);
   }
-  picker(fb, user);
+
+  // 公開模式：右上角放「教師登入」
+  $('#who').innerHTML = '<button class="btn sm btn-yellow" id="bLogin">教師登入</button>';
+  $('#bLogin').onclick = async () => {
+    try { await googleSignIn(); location.reload(); } catch (e) { if (e.code !== 'auth/popup-closed-by-user') toast(authErrorText(e)); }
+  };
+  if (!user) {
+    try { user = (await fb.signInAnonymously(fb.auth)).user; } catch (e) {
+      main.innerHTML = `<div class="card narrow center"><h2>無法連線</h2><p>${esc(authErrorText(e))}</p></div>`;
+      return;
+    }
+  }
+  if (rid) return enterRoom(fb, rid, { owner: false });
+  publicList(fb);
+}
+
+/** 公開房間清單：各老師的房間分開列出，即時更新，點選後投影該房間。 */
+function publicList(fb) {
+  main.innerHTML = '<p class="muted center">讀取房間清單…</p>';
+  const off = fb.onValue(fb.ref(fb.db, 'buzzLive'), (snap) => {
+    const day = Date.now() - 24 * 3600 * 1000;
+    const rooms = Object.entries(snap.val() || {})
+      .map(([rid, r]) => ({ rid, ...r }))
+      .filter((r) => (r.createdAt || 0) > day)
+      .sort((a, b) => b.createdAt - a.createdAt);
+    patch(main, `
+      <div class="rooms-page">
+        <h2>進行中的房間</h2>
+        <p class="muted">選擇要投影的房間。老師請用手機按右上角「教師登入」建立房間並操作。</p>
+        ${rooms.length ? `<div class="room-grid">${rooms.map((r) => `
+          <button class="room-card" data-rid="${esc(r.rid)}">
+            <span class="rc-code">${esc(r.rid)}</span>
+            <span class="rc-class">${esc(r.className || '（未命名班級）')}</span>
+            <span class="rc-owner">${esc(r.ownerName || '老師')}</span>
+            <span class="rc-meta"><span class="badge ${r.phase === 'game' ? 'st-open' : r.phase === 'ended' ? 'st-locked' : 'st-idle'}">${PHASE_TEXT[r.phase] || ''}</span>
+              ${r.n || 0} 人・${new Date(r.createdAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })} 開始</span>
+          </button>`).join('')}</div>`
+          : '<div class="card center"><h3>目前沒有進行中的房間</h3><p>老師建立房間後會自動出現在這裡。</p></div>'}
+      </div>`);
+  });
+  main.onclick = (e) => {
+    const c = e.target.closest('.room-card');
+    if (!c) return;
+    off();
+    main.onclick = null;
+    main._html = null;
+    history.pushState(null, '', `?room=${c.dataset.rid}`);
+    enterRoom(fb, c.dataset.rid, { owner: false });     // 同頁切換，點擊同時解鎖音效
+  };
+  window.onpopstate = () => location.reload();
 }
 
 async function picker(fb, user) {
   const rooms = await listMyRooms(fb, user.uid);
+  const go = (rid) => (isPhone() ? location.assign(remoteUrl(rid)) : enterRoom(fb, rid, { owner: true }));
   main.innerHTML = `
     <div class="card narrow">
       <h2>開始一場搶答</h2>
-      <button class="btn btn-yellow big" id="bNew" style="width:100%">＋ 建立新房間</button>
+      <form id="fNew" class="new-room">
+        <label>班級名稱<input id="cName" maxlength="20" required placeholder="例如 KJ21、高一3" autocomplete="off"></label>
+        <button class="btn btn-yellow big" id="bNew" style="width:100%">＋ 建立新房間</button>
+      </form>
+      <p class="note">${isPhone() ? '建立後進入手機控制頁；教室電腦打開本網址（不用登入）選這個房間投影。' : '投影電腦不用登入也能從房間清單選房間投影。'}</p>
       ${rooms.length ? `<h3 style="margin-top:18px">繼續之前的房間（24 小時內）</h3>
         <ul class="plist">${rooms.map((r) => `<li><span class="who">${r.rid}<small>${new Date(r.createdAt).toLocaleString('zh-TW')}</small></span>
           <button class="btn sm" data-rid="${r.rid}">繼續</button></li>`).join('')}</ul>` : ''}
     </div>`;
-  $('#bNew').onclick = async () => {
-    try { enterRoom(fb, await createRoom(fb, user.uid, newRoomId)); } catch (e) { toast(e.message); }
+  $('#fNew').onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $('#cName').value.trim();
+    if (!name) { toast('請輸入班級名稱'); $('#cName').focus(); return; }
+    $('#bNew').disabled = true;
+    try { go(await createRoom(fb, user, newRoomId, name)); } catch (err) { toast(err.message); $('#bNew').disabled = false; }
   };
-  main.querySelectorAll('[data-rid]').forEach((b) => { b.onclick = () => enterRoom(fb, b.dataset.rid); });
+  main.querySelectorAll('[data-rid]').forEach((b) => { b.onclick = () => go(b.dataset.rid); });
 }
 
-function enterRoom(fb, rid) {
+function enterRoom(fb, rid, { owner }) {
   history.replaceState(null, '', `?room=${rid}`);
   $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
-  $('#bRemote').hidden = false; $('#bDrawer').hidden = false;
-  $('#bRemote').onclick = () => {
-    const m = document.createElement('div');
-    m.className = 'modal';
-    m.innerHTML = `<div class="qrbox"><h3 style="color:#111">老師用手機掃描遙控</h3><div class="qr">${qrImg(remoteUrl(rid))}</div>
-      <p class="url">${esc(remoteUrl(rid))}</p><button class="btn btn-yellow">關閉</button></div>`;
-    m.onclick = (e) => { if (e.target === m || e.target.tagName === 'BUTTON') m.remove(); };
-    document.body.appendChild(m);
-  };
+  fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta/className`)).then((v) => { if (v.val()) $('#roomTag').textContent = `${v.val()}・${rid}`; }).catch(() => {});
+  $('#bBack').hidden = owner;
+  if (owner) {
+    $('#bRemote').hidden = false; $('#bDrawer').hidden = false;
+    $('#bRemote').onclick = () => {
+      const m = document.createElement('div');
+      m.className = 'modal';
+      m.innerHTML = `<div class="qrbox"><h3 style="color:#111">老師用手機掃描遙控</h3><div class="qr">${qrImg(remoteUrl(rid))}</div>
+        <p class="url">${esc(remoteUrl(rid))}</p><button class="btn btn-yellow">關閉</button></div>`;
+      m.onclick = (e) => { if (e.target === m || e.target.tagName === 'BUTTON') m.remove(); };
+      document.body.appendChild(m);
+    };
+  }
 
   let s = null;
   let tab = 'live';            // live：本題畫面｜board：排行榜
-  const prev = { players: 0, state: null, round: null, first: null, cd: null };
-  const act = makeActions(fb, rid, () => s);
-  bindControls(main, act);
-  bindControls($('#drawer'), act, { onCleared: () => location.replace(location.pathname) });
+  const prev = { players: 0, state: null, round: null, first: null, cd: null, phase: null };
+  const act = owner ? makeActions(fb, rid, () => s) : null;
+  if (owner) {
+    bindControls(main, act, { onCleared: () => location.replace(location.pathname) });
+    bindControls($('#drawer'), act, { onCleared: () => location.replace(location.pathname) });
+  }
   main.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
     if (t) { tab = t.dataset.tab; render(); }
     const c = e.target.closest('.pcard.pending');
-    if (c) act.approve(c.dataset.uid);
+    if (c && owner) act.approve(c.dataset.uid);
   });
 
   watchRoom(fb, rid, (next) => {
-    if (!next) { main.innerHTML = '<div class="card narrow center"><h2>房間已結束</h2><a class="btn btn-yellow" href="./">回首頁</a></div>'; return; }
+    if (!next) {
+      s = null;
+      main._html = null;
+      main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${base}">回房間清單</a></div>`;
+      return;
+    }
     s = next;
     effects();
     render();
-    runJobs(s, act);
+    if (owner) { runJobs(s, act); syncLive(fb, rid, s); }
   });
 
   setInterval(() => {
     if (!s) return;
-    runJobs(s, act);
+    if (owner) runJobs(s, act);
     const left = remainingSec(s.meta);
     document.querySelectorAll('[data-cd]').forEach((el) => { el.textContent = left == null ? '' : `${left}`; });
     if (left != null && left !== prev.cd && left <= 3 && left > 0) sound.tick();
@@ -139,22 +216,35 @@ function enterRoom(fb, rid) {
   /** 依資料變化播音效 */
   function effects() {
     const n = Object.keys(s.players).length;
-    if (n > prev.players) sound.join();
+    if (n > prev.players && prev.state !== null) sound.join();
     prev.players = n;
     const m = s.meta;
     if (prev.state !== null) {
       if (m.state === 'open' && (prev.state !== 'open' || prev.round !== m.round)) sound.open();
       if (m.state === 'locked' && prev.state === 'open') sound.end();
+      if (m.phase === 'ended' && prev.phase !== 'ended') sound.first();
     }
     const first = s.ranked[0] && `${m.round}/${s.ranked[0].uid}`;
-    if (first && first !== prev.first && prev.state !== null && m.qtype !== 'answer') sound.first();
-    prev.first = first; prev.state = m.state; prev.round = m.round;
+    if (first && first !== prev.first && prev.state !== null && !isChoice(m)) sound.first();
+    prev.first = first; prev.state = m.state; prev.round = m.round; prev.phase = m.phase;
+  }
+
+  function sideHTML() {
+    return `<div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div><div class="code">${rid}</div>
+      <a class="url" href="${esc(joinUrl(rid))}" target="_blank" rel="noopener">${esc(joinUrl(rid))}</a></div>`;
   }
 
   function render() {
     const m = s.meta;
-    patch($('#dPlayers'), playersHTML(s));
-    patch($('#dSettings'), settingsHTML(s));
+    if (owner) {
+      patch($('#dPlayers'), playersHTML(s));
+      patch($('#dSettings'), settingsHTML(s));
+    }
+
+    if (m.phase === 'ended') {
+      patch(main, `<div class="ended-wrap">${podiumHTML(s)}${owner ? `<div class="panel ended-ctl">${controlsHTML(s)}</div>` : ''}</div>`);
+      return;
+    }
 
     if (m.phase === 'lobby') {
       const list = Object.entries(s.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
@@ -166,13 +256,13 @@ function enterRoom(fb, rid) {
             <div class="code">${rid}</div><a class="url" href="${esc(joinUrl(rid))}" target="_blank" rel="noopener">${esc(joinUrl(rid))}</a></div>
           <div>
             <div class="row between wrap">
-              <div class="count-big">已加入 <b>${ok}</b> 人${pend ? `　待核准 <b>${pend}</b>` : ''}</div>
-              <div class="row">
+              <div class="count-big">${m.className ? `<span class="cls-tag">${esc(m.className)}</span>` : ''}已加入 <b>${ok}</b> 人${pend ? `　待核准 <b>${pend}</b>` : ''}</div>
+              ${owner ? `<div class="row">
                 ${pend ? '<button class="btn" data-act="approveAll">全部核准</button>' : ''}
                 <button class="btn btn-yellow" data-act="game">進入搶答 ▶</button>
-              </div>
+              </div>` : `<span class="badge st-idle">${esc(m.ownerName || '老師')}・等待開始</span>`}
             </div>
-            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。虛線卡片＝待核准（點一下核准）。</p>
+            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點一下核准）。' : '虛線卡片＝等待老師核准。'}</p>
             <div class="cards">${list.map(([uid, p]) => `
               <div class="pcard ${p.approved ? '' : 'pending'} ${s.presence[uid] ? '' : 'offline'}" data-uid="${uid}">
                 ${esc(p.name)}<small>${esc([p.cls, groupLabel(p.group)].filter(Boolean).join('・'))}</small></div>`).join('')}</div>
@@ -181,18 +271,19 @@ function enterRoom(fb, rid) {
       return;
     }
 
-    const isAns = m.qtype === 'answer';
+    const choice = isChoice(m);
     let stage;
     if (tab === 'board') stage = boardHTML(s);
-    else if (isAns) stage = m.state === 'idle' ? '<div class="bigmsg">準備作答…</div>' : answerHTML(s, { big: true });
-    else stage = m.state === 'idle' ? '<div class="bigmsg">準備搶答…</div>' : orderHTML(s, { big: true });
+    else if (choice) stage = m.state === 'idle' ? '<div class="bigmsg">準備作答…</div>' : answerHTML(s, { big: true });
+    else stage = m.state === 'idle' ? '<div class="bigmsg">準備搶答…</div>' : orderHTML(s, { big: true, judging: owner });
 
     patch(main, `
       <div class="game">
         <section class="stage">
           <div class="stage-head">
+            ${m.className ? `<span class="cls-tag">${esc(m.className)}</span>` : ''}
             <span class="q">第 ${esc(m.round)} 題</span>
-            <span class="badge st-${m.state}">${isAns ? '作答題' : '搶答題'}・${stateText(m)}</span>
+            <span class="badge st-${m.state}">${QTYPES[m.qtype] || ''}・${stateText(m)}</span>
             <span class="spacer" style="flex:1"></span>
             <span class="bigcd" data-cd></span>
           </div>
@@ -203,8 +294,8 @@ function enterRoom(fb, rid) {
           ${stage}
         </section>
         <aside class="side">
-          <div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div><div class="code">${rid}</div></div>
-          <div class="panel">${controlsHTML(s)}</div>
+          ${sideHTML()}
+          ${owner ? `<div class="panel">${controlsHTML(s)}</div>` : ''}
         </aside>
       </div>`);
   }

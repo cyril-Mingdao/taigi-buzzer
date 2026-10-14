@@ -7,22 +7,30 @@
 import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
-  DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, OPTION_SETS, optionList, optionText,
+  DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
+  CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
 } from './core.js';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
-export async function teacherBoot(root) {
-  let fb;
+/** 載入 Firebase 並取得目前登入者（不擋人）。沒有設定檔時顯示設定說明並回傳 null。 */
+export async function bootFirebase(root) {
   try {
-    fb = await loadFirebase();
+    const fb = await loadFirebase();
+    return { fb, user: await currentUser() };
   } catch (e) {
     if (e.code === 'NO_CONFIG') { showSetupNeeded(root); return null; }
     throw e;
   }
+}
+export const isTeacherUser = (u) => !!u && !u.isAnonymous && isTeacherEmail(u.email);
 
-  let user = await currentUser();
-  if (user && !user.isAnonymous && isTeacherEmail(user.email)) return { fb, user };
+export async function teacherBoot(root) {
+  const boot = await bootFirebase(root);
+  if (!boot) return null;
+  const { fb } = boot;
+  let { user } = boot;
+  if (isTeacherUser(user)) return { fb, user };
 
   return new Promise((resolve) => {
     const draw = (msg = '') => {
@@ -93,19 +101,27 @@ export async function listMyRooms(fb, uid) {
   // 超過 24 小時的舊房間順手清掉（個資不留存）
   const stale = rooms.filter((r) => Date.now() - r.createdAt > 24 * 3600 * 1000);
   for (const r of stale) {
+    await fb.remove(fb.ref(fb.db, `buzzLive/${r.rid}`)).catch(() => {});
     await fb.remove(fb.ref(fb.db, `buzzRooms/${r.rid}`)).catch(() => {});
     await fb.remove(fb.ref(fb.db, `buzzOwners/${uid}/${r.rid}`)).catch(() => {});
   }
   return rooms.filter((r) => !stale.includes(r)).sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export async function createRoom(fb, uid, newRoomId) {
+export const teacherName = (u) => String((u && (u.displayName || u.email)) || '老師').slice(0, 40);
+
+export async function createRoom(fb, user, newRoomId, className) {
+  const uid = user.uid;
+  const ownerName = teacherName(user);
+  className = cleanClassName(className);
+  if (!className) throw new Error('請輸入班級名稱');
   for (let i = 0; i < 5; i++) {
     const rid = newRoomId();
     const exists = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).exists();
     if (exists) continue;
-    await fb.set(fb.ref(fb.db, `buzzRooms/${rid}/meta`), { ...DEFAULT_META, ownerUid: uid, createdAt: fb.serverTimestamp() });
+    await fb.set(fb.ref(fb.db, `buzzRooms/${rid}/meta`), { ...DEFAULT_META, ownerUid: uid, ownerName, className, createdAt: fb.serverTimestamp() });
     await fb.set(fb.ref(fb.db, `buzzOwners/${uid}/${rid}`), Date.now());
+    await fb.set(fb.ref(fb.db, `buzzLive/${rid}`), { ownerUid: uid, ownerName, className, createdAt: Date.now(), phase: 'lobby', n: 0 });
     return rid;
   }
   throw new Error('房間碼重複太多次，請再試一次');
@@ -128,6 +144,7 @@ export function watchRoom(fb, rid, onChange) {
       answers: (v.answers || {})[round] || {},
       judges: (v.judges || {})[round] || {},
       ranked: rankBuzzes((v.buzzes || {})[round], players, meta),
+      raw: v,
     });
   });
 }
@@ -150,6 +167,12 @@ export function makeActions(fb, rid, getState) {
     next: () => meta({ phase: 'game', state: 'idle', round: String((parseInt(getState().meta.round, 10) || 0) + 1), openAt: null, answer: null }),
     lobby: () => meta({ phase: 'lobby', state: 'idle' }),
     game: () => meta({ phase: 'game' }),
+    async end() {
+      if (!(await ask({ title: '結束活動', message: '投影頁會顯示冠軍、亞軍、季軍與各組得分。結束後仍可「繼續活動」。', ok: '結束活動' }))) return;
+      return meta({ phase: 'ended', state: 'locked' });
+    },
+    resume: () => meta({ phase: 'game' }),
+    save: () => saveScores(fb, rid, getState),
     setMeta: meta,
 
     /** 搶答題：老師對搶答者按 ✓／✗。再按一次同一顆＝取消，分數一併還原。答對自動鎖定。 */
@@ -157,7 +180,7 @@ export function makeActions(fb, rid, getState) {
       const s = getState();
       const p = s.players[uid];
       if (!p) return;
-      const pts = (v) => (v === 'right' ? 1 : v === 'wrong' ? (s.meta.wrongPts || 0) : 0);
+      const pts = (v) => (v === 'right' ? CORRECT_PTS : v === 'wrong' ? (s.meta.wrongPts || 0) : 0);
       const old = s.judges[uid] || null;
       const next = old === verdict ? null : verdict;
       const upd = {
@@ -168,16 +191,19 @@ export function makeActions(fb, rid, getState) {
       return fb.update(r(), upd).catch((e) => toast(authErrorText(e)));
     },
 
-    /** 作答題：公布正解並一次更新所有人分數；公布後改按別的選項＝更正，分數自動重算。 */
+    /** 是非／選擇題：老師選標準答案後核對全部作答並計分（答對 10 分＋前五名速度加成）；
+        改選別的答案＝更正，分數依新舊答案差額重算。 */
     reveal(ans) {
       const s = getState();
       const prev = s.meta.answer || null;
       if (prev === ans) return;
-      const upd = { 'meta/answer': ans, 'meta/state': 'locked' };
-      for (const [uid, a] of Object.entries(s.answers)) {
+      const oldPts = choicePoints(s.answers, prev);
+      const newPts = choicePoints(s.answers, ans);
+      const upd = { 'meta/answer': ans, 'meta/state': 'locked', [`keys/${s.meta.round}`]: ans };
+      for (const uid of new Set([...Object.keys(oldPts), ...Object.keys(newPts)])) {
         const p = s.players[uid];
         if (!p) continue;
-        const d = (a.c === ans ? 1 : 0) - (a.c === prev ? 1 : 0);
+        const d = (newPts[uid] || 0) - (oldPts[uid] || 0);
         if (d) upd[`players/${uid}/score`] = (p.score || 0) + d;
       }
       return fb.update(r(), upd).catch((e) => toast(authErrorText(e)));
@@ -236,10 +262,11 @@ export function makeActions(fb, rid, getState) {
       for (const uid of Object.keys(getState().players)) patch[`${uid}/score`] = 0;
       await fb.update(r('/players'), patch);
     },
-    async clearRoom() {
-      if (!(await ask({
-        title: '結束並清除資料', message: '刪除本房間所有學生姓名與紀錄，此動作無法復原。', ok: '結束並清除', danger: true,
+    async clearRoom({ confirm = true } = {}) {
+      if (confirm && !(await ask({
+        title: '關閉並清除資料', message: '刪除本房間所有學生姓名與紀錄，此動作無法復原。', ok: '關閉並清除', danger: true,
       }))) return false;
+      await fb.remove(fb.ref(fb.db, `buzzLive/${rid}`)).catch(() => {});
       await fb.remove(r(''));
       await fb.remove(fb.ref(fb.db, `buzzOwners/${fb.auth.currentUser.uid}/${rid}`)).catch(() => {});
       return true;
@@ -268,7 +295,8 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export const stateText = (m) => (m.state === 'open' && m.qtype === 'answer' ? '作答中' : STATE_TEXT[m.state]);
+export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
+  : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
 /* ══ 控制面板（遙控頁全版、投影頁抽屜共用） ══════════════════════════ */
 
@@ -308,10 +336,10 @@ export function orderHTML(s, { judging = true, big = false } = {}) {
   }).join('')}</ol>`;
 }
 
-/** 作答題：作答人數、各選項分布、公布後答對名單。 */
+/** 是非／選擇題：作答人數、各選項分布、公布後答對名單（含本題得分）。 */
 export function answerHTML(s, { big = false } = {}) {
   const m = s.meta;
-  const opts = optionList(m.options);
+  const opts = optionList(m);
   const total = Object.values(s.players).filter((p) => p.approved).length;
   const list = Object.entries(s.answers).filter(([uid]) => s.players[uid]);
   const n = list.length;
@@ -326,14 +354,15 @@ export function answerHTML(s, { big = false } = {}) {
       <span class="track"><span style="width:${revealed ? pct : 0}%"></span></span>
       <span class="num">${revealed ? c : ''}</span></div>`;
   }).join('');
-  const winners = revealed
-    ? list.filter(([, a]) => a.c === m.answer).sort((a, b) => a[1].at - b[1].at).map(([uid]) => s.players[uid])
-    : [];
-  return `<div class="answer-view${big ? ' big' : ''}">
-    <div class="answered">已作答 <b>${n}</b> / ${total}</div>
+  const pts = revealed ? choicePoints(s.answers, m.answer) : {};
+  const winners = Object.keys(pts).filter((uid) => s.players[uid])
+    .sort((a, b) => pts[b] - pts[a] || s.answers[a].at - s.answers[b].at);
+  return `<div class="answer-view${big ? ' big' : ''} ${opts.length > 5 ? 'many' : ''}">
+    <div class="answered">已作答 <b>${n}</b> / ${total}${revealed ? `　標準答案 <b>${optionText(m.answer)}</b>` : ''}</div>
     <div class="bars">${bars}</div>
     ${revealed ? `<h3>答對（${winners.length}）</h3>
-      <div class="winners">${winners.map((p) => `<span class="chip">${unitHTML(p, m)}</span>`).join('') || '<span class="muted">沒有人答對</span>'}</div>` : ''}
+      <div class="winners">${winners.map((uid) => `<span class="chip">${unitHTML(s.players[uid], m)}<b>+${pts[uid]}</b></span>`).join('')
+        || '<span class="muted">沒有人答對</span>'}</div>` : ''}
   </div>`;
 }
 
@@ -344,29 +373,58 @@ export function boardHTML(s) {
     <li><span class="rank">${i + 1}</span><span class="who">${esc(u.name)}</span><b>${u.score}</b></li>`).join('')}</ol>`;
 }
 
+/** 活動結束：冠軍、亞軍、季軍頒獎台＋其餘各組（或個人）得分。同分同名次。 */
+export function podiumHTML(s) {
+  const rows = leaderboard(s.players, s.meta);
+  if (!rows.length) return '<div class="bigmsg">活動結束</div>';
+  let rank = 0;
+  rows.forEach((u, i) => { if (i === 0 || u.score !== rows[i - 1].score) rank = i + 1; u.rank = rank; });
+  const medal = { 1: ['🥇', '冠軍'], 2: ['🥈', '亞軍'], 3: ['🥉', '季軍'] };
+  const top = rows.filter((u) => u.rank <= 3);
+  const rest = rows.filter((u) => u.rank > 3);
+  const col = (u) => `<div class="pod pod-${u.rank}"><div class="pod-medal">${medal[u.rank][0]}</div>
+    <div class="pod-title">${medal[u.rank][1]}</div><div class="pod-name">${esc(u.name)}</div><div class="pod-score">${u.score} 分</div></div>`;
+  // 頒獎台排列：亞軍－冠軍－季軍
+  const order = [...top.filter((u) => u.rank === 2), ...top.filter((u) => u.rank === 1), ...top.filter((u) => u.rank === 3)];
+  return `<div class="ended">
+    <h2 class="ended-title">🏆 ${s.meta.className ? `${esc(s.meta.className)} ` : ''}活動結束</h2>
+    <div class="podium">${order.map(col).join('')}</div>
+    ${rest.length ? `<ol class="board rest">${rest.map((u) => `
+      <li><span class="rank">${u.rank}</span><span class="who">${esc(u.name)}</span><b>${u.score}</b></li>`).join('')}</ol>` : ''}
+  </div>`;
+}
+
 export function controlsHTML(s) {
   const m = s.meta;
   const btn = (act, label, cls = '', dis = false, extra = '') =>
     `<button class="btn ${cls}" data-act="${act}" ${extra} ${dis ? 'disabled' : ''}>${label}</button>`;
+  if (m.phase === 'ended') {
+    return `
+      <div class="ctl-status"><span class="badge st-locked">活動結束</span>　共 ${esc(m.round)} 題</div>
+      <div class="ctl-main">
+        ${btn('save', '💾 儲存成績', 'btn-yellow big')}
+        ${btn('resume', '↩ 繼續活動', 'big')}
+        ${btn('clear', '✕ 關閉房間', 'big danger')}
+      </div>
+      <p class="note">「儲存成績」存成「民國日期＋班級名稱」的 CSV 到雲端硬碟，成功後自動關閉房間；「關閉房間」不存檔直接刪除本房間資料。</p>`;
+  }
+  const choice = isChoice(m);
   const seg = Object.entries(QTYPES).map(([v, t]) => btn('qtype', t, m.qtype === v ? 'on' : '', false, `data-v="${v}"`)).join('');
-  const isAns = m.qtype === 'answer';
-  const optSel = isAns
-    ? `<select data-set="options" ${m.state !== 'idle' ? 'disabled' : ''}>${Object.entries(OPTION_SETS)
-      .map(([v, t]) => `<option value="${v}" ${m.options === v ? 'selected' : ''}>${t}</option>`).join('')}</select>` : '';
-  const reveal = isAns && m.state !== 'idle'
-    ? `<div class="reveal"><span>${m.answer ? '已公布正解（點別的可更正）' : '公布正解：'}</span>
-        ${optionList(m.options).map((o) => btn('reveal', optionText(o), m.answer === o ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}</div>`
+  const reveal = choice && m.state !== 'idle'
+    ? `<div class="reveal"><span>${m.answer ? '標準答案（點別的可更正）' : '選擇標準答案：'}</span>
+        ${optionList(m).map((o) => btn('reveal', optionText(o), m.answer === o ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}</div>`
     : '';
   return `
     <div class="ctl-status">第 <b>${esc(m.round)}</b> 題 · <span class="badge st-${m.state}">${stateText(m)}</span>
       <span class="cd" data-cd></span></div>
-    <div class="seg row wrap">${seg}${optSel}</div>
+    <div class="seg row wrap">${seg}</div>
     <div class="ctl-main">
-      ${btn('open', isAns ? '▶ 開始作答' : '▶ 開始搶答', 'btn-yellow big', m.state !== 'idle')}
+      ${btn('open', choice ? '▶ 開始作答' : '▶ 開始搶答', 'btn-yellow big', m.state !== 'idle')}
       ${btn('lock', '■ 鎖定', 'big', m.state !== 'open')}
-      ${btn('next', '↻ 重置', 'big')}
+      ${btn('next', '↻ 下一題', 'big')}
     </div>
-    ${reveal}`;
+    ${reveal}
+    <div class="row end-row">${btn('end', '🏁 結束活動', 'danger')}</div>`;
 }
 
 export function playersHTML(s) {
@@ -395,21 +453,24 @@ export function playersHTML(s) {
 export function settingsHTML(s) {
   const m = s.meta;
   const opt = (obj, cur) => Object.entries(obj).map(([v, t]) => `<option value="${v}" ${String(cur) === v ? 'selected' : ''}>${t}</option>`).join('');
-  const cds = { 0: '不倒數', 5: '5 秒', 10: '10 秒', 15: '15 秒', 20: '20 秒', 30: '30 秒', 60: '60 秒' };
+  const cds = { 0: '不限', 5: '5 秒', 10: '10 秒', 15: '15 秒', 20: '20 秒', 30: '30 秒', 60: '60 秒' };
   const gcs = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [i + 2, `${i + 2} 組`]));
   return `
+    <label>班級名稱<input data-set="className" maxlength="20" value="${esc(m.className || '')}" placeholder="例如 KJ21"></label>
+    <label>題型<select data-set="qtype">${opt(QTYPES, m.qtype)}</select></label>
     <label>倒數秒數<select data-set="countdownSec" data-num>${opt(cds, m.countdownSec)}</select></label>
     <label>偷跑處罰<select data-set="penaltySec" data-num>${opt(PENALTIES, m.penaltySec)}</select></label>
-    <label>搶答答錯<select data-set="wrongPts" data-num>${opt({ 0: '不扣分', '-1': '扣 1 分' }, m.wrongPts)}</select></label>
+    <label>搶答答錯<select data-set="wrongPts" data-num>${opt({ 0: '不扣分', '-5': '扣 5 分', '-10': '扣 10 分' }, m.wrongPts)}</select></label>
     <label>加入方式<select data-set="joinMode">${opt({ approve: '老師核准', auto: '自動核准' }, m.joinMode)}</select></label>
     <label>分組規則<select data-set="groupMode">${opt(GROUP_MODES, m.groupMode)}</select></label>
     ${m.groupMode === 'none' ? '' : `<label>組數<select data-set="groupCount" data-num>${opt(gcs, m.groupCount)}</select></label>`}
+    <p class="note">計分：答對 ${CORRECT_PTS} 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1。</p>
     <div class="row wrap">
       ${m.phase === 'lobby'
         ? '<button class="btn" data-act="game">進入搶答畫面</button>'
         : '<button class="btn" data-act="lobby">回到加入畫面（大 QR）</button>'}
       <button class="btn" data-act="resetScores">分數歸零</button>
-      <button class="btn danger" data-act="clear">結束並清除資料</button>
+      <button class="btn danger" data-act="clear">關閉並清除資料</button>
     </div>`;
 }
 
@@ -424,11 +485,120 @@ export function bindControls(root, act, { onCleared } = {}) {
     if (a === 'reveal') return act.reveal(v);
     if (a === 'qtype') return act.setQtype(v);
     if (a === 'clear') { if (await act.clearRoom()) onCleared && onCleared(); return; }
+    if (a === 'save') { if (await act.save()) onCleared && onCleared(); return; }
     if (typeof act[a] === 'function') act[a](uid);
   });
   root.addEventListener('change', (e) => {
     const el = e.target.closest('[data-set]');
     if (!el) return;
+    if (el.dataset.set === 'qtype') { act.setQtype(el.value); return; }
+    if (el.dataset.set === 'className') {
+      const v = cleanClassName(el.value);
+      if (!v) { toast('班級名稱不能空白'); return; }
+      act.setMeta({ className: v });
+      return;
+    }
     act.setMeta({ [el.dataset.set]: 'num' in el.dataset ? Number(el.value) : el.value });
   });
+}
+
+/* ══ 公開房間清單（buzzLive）：教師端維護摘要，投影頁不用登入也看得到 ══════════ */
+
+export function syncLive(fb, rid, s) {
+  if (!s) return;
+  const n = Object.values(s.players).filter((p) => p.approved).length;
+  const sig = `${s.meta.phase}|${n}|${s.meta.className || ''}`;
+  if (syncLive.last === `${rid}|${sig}`) return;
+  syncLive.last = `${rid}|${sig}`;
+  fb.update(fb.ref(fb.db, `buzzLive/${rid}`), {
+    ownerUid: s.meta.ownerUid, ownerName: s.meta.ownerName || '老師', className: s.meta.className || '',
+    createdAt: s.meta.createdAt || Date.now(), phase: s.meta.phase, n,
+  }).catch(() => {});
+}
+
+/* ══ 儲存成績：每班一個 CSV → Apps Script 寫進雲端硬碟資料夾 → 關閉房間 ══════════ */
+
+const csvCell = (v) => {
+  const t = String(v ?? '');
+  return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+};
+const stamp = (d = new Date()) => {
+  const p = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+};
+
+/** 產生成績 CSV：一個房間一個檔，檔名＝民國日期＋班級名稱（例如 1151014KJ21.csv）。
+    答對題數＝是非／選擇題答對＋搶答被判 ✓；作答次數＝作答＋搶答次數。 */
+export function buildScoreFiles(s, when = new Date()) {
+  const raw = s.raw || {};
+  const keys = raw.keys || {};
+  const correct = {};
+  const tried = {};
+  for (const [round, list] of Object.entries(raw.answers || {})) {
+    for (const [uid, a] of Object.entries(list || {})) {
+      tried[uid] = (tried[uid] || 0) + 1;
+      if (keys[round] && a.c === keys[round]) correct[uid] = (correct[uid] || 0) + 1;
+    }
+  }
+  for (const list of Object.values(raw.buzzes || {})) for (const uid of Object.keys(list || {})) tried[uid] = (tried[uid] || 0) + 1;
+  for (const list of Object.values(raw.judges || {})) {
+    for (const [uid, v] of Object.entries(list || {})) if (v === 'right') correct[uid] = (correct[uid] || 0) + 1;
+  }
+  const list = Object.entries(s.players).filter(([, p]) => p.approved).map(([uid, p]) => ({ uid, ...p }));
+  if (!list.length) return [];
+  list.sort((a, b) => (b.score || 0) - (a.score || 0) || a.name.localeCompare(b.name, 'zh-Hant'));
+  let rank = 0;
+  const rows = list.map((p, i) => {
+    if (i === 0 || (p.score || 0) !== (list[i - 1].score || 0)) rank = i + 1;
+    return [rank, p.cls || OTHER_CLASS, p.name, p.group ? groupLabel(p.group) : '', p.score || 0, correct[p.uid] || 0, tried[p.uid] || 0];
+  });
+  const className = cleanClassName(s.meta.className) || '未命名班級';
+  const csv = [
+    ['台語課堂搶答成績', `班級 ${className}`, `房間 ${s.rid}`, `題數 ${s.meta.round}`, when.toLocaleString('zh-TW', { hour12: false })],
+    ['名次', '學生班級', '姓名', '組別', '總分', '答對題數', '作答次數'],
+    ...rows,
+  ].map((r) => r.map(csvCell).join(',')).join('\r\n');
+  return [{ name: `${rocDate(when)}${className}.csv`, csv }];
+}
+
+async function saveScores(fb, rid, getState) {
+  const s = getState();
+  const files = buildScoreFiles(s);
+  if (!files.length) { toast('還沒有已核准的學生，沒有成績可存'); return false; }
+  if (!(await ask({
+    title: '儲存成績到雲端硬碟',
+    message: `將存成 ${files.map((f) => f.name).join('、')}。成功後會關閉房間。`,
+    ok: '儲存並關閉房間',
+  }))) return false;
+  try {
+    let result;
+    if (fb.isMock) {
+      result = { ok: true, files: files.map((f) => ({ name: f.name, url: '#' })) };
+      console.log('[mock] 成績檔', files);
+    } else {
+      if (!SAVE_ENDPOINT) { toast('尚未設定存檔網址（core.js 的 SAVE_ENDPOINT）'); return false; }
+      const accessToken = await googleAccessToken();     // 在點擊當下開 Google 驗證視窗
+      toast('儲存中…', 10000);
+      const res = await fetch(SAVE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },     // 避免 CORS 預檢
+        body: JSON.stringify({ accessToken, room: rid, files }),
+      });
+      result = await res.json();
+    }
+    if (!result.ok) throw new Error(result.error || '存檔失敗');
+    await fb.remove(fb.ref(fb.db, `buzzLive/${rid}`)).catch(() => {});
+    await fb.remove(fb.ref(fb.db, `buzzRooms/${rid}`));
+    await fb.remove(fb.ref(fb.db, `buzzOwners/${fb.auth.currentUser.uid}/${rid}`)).catch(() => {});
+    await ask({
+      title: '✅ 成績已儲存，房間已關閉',
+      message: result.files.map((f) => f.name).join('\n'),
+      ok: '好', cancel: '關閉',
+    });
+    return true;
+  } catch (e) {
+    if (e.code === 'auth/popup-closed-by-user') { toast('已取消驗證，成績尚未儲存'); return false; }
+    toast(`成績儲存失敗，房間保留：${e.message || e}`, 6000);
+    return false;
+  }
 }

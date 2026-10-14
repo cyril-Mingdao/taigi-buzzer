@@ -1,0 +1,105 @@
+<!doctype html>
+<!--
+  【著作權聲明】
+  台語課堂搶答（手機遙控頁）— 教師在手機上開始／鎖定／重置、判定對錯、公布正解、核准名單
+  Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
+  本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
+  未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="author" content="詹宗龍（臺中明道中學）">
+<meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
+<title>課堂搶答・遙控</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  .remote { display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
+  .remote .tabs { position: sticky; top: 0; background: var(--black); padding: 8px 0; z-index: 5; }
+  .remote .tabs .btn { flex: 1; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <span class="title">遙控</span>
+  <span id="roomTag" class="badge st-open" hidden></span>
+  <span class="spacer"></span>
+  <span class="who" id="who"></span>
+</header>
+<main class="wrap-page" id="main"><p class="muted center">載入中…</p></main>
+
+<script type="module">
+import { normalizeRoom, $, toast } from './assets/core.js';
+import {
+  teacherBoot, mountAccountMenu, watchRoom, makeActions, runJobs, remainingSec, patch,
+  orderHTML, answerHTML, boardHTML, controlsHTML, playersHTML, settingsHTML, bindControls,
+} from './assets/teacher.js';
+
+const main = $('#main');
+const rid = normalizeRoom(new URL(location.href).searchParams.get('room'));
+if (!rid) {
+  main.innerHTML = '<div class="card narrow center"><h2>缺少房間碼</h2><p>請從投影頁的「📱 手機遙控」掃描 QR code 進入。</p></div>';
+} else {
+  const session = await teacherBoot(main);
+  if (session) start(session);
+}
+
+async function start({ fb, user }) {
+  mountAccountMenu(fb, user);
+  const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
+  if (!meta) { main.innerHTML = `<div class="card narrow center"><h2>房間 ${rid} 不存在或已清除</h2></div>`; return; }
+  if (meta.ownerUid !== user.uid) { main.innerHTML = '<div class="card narrow center"><h2>這個房間不是你建立的</h2><p>請用建立房間的同一個 Google 帳號登入。</p></div>'; return; }
+  $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
+
+  let s = null;
+  let tab = 'q';
+  const act = makeActions(fb, rid, () => s);
+  main.innerHTML = `
+    <div class="remote">
+      <div class="panel" id="ctl"></div>
+      <div class="tabs row">
+        <button class="btn sm" data-tab="q">本題</button>
+        <button class="btn sm" data-tab="p">名單</button>
+        <button class="btn sm" data-tab="b">排行榜</button>
+        <button class="btn sm" data-tab="s">設定</button>
+      </div>
+      <div class="panel" id="body"></div>
+    </div>`;
+  bindControls(main, act, { onCleared: () => { main.innerHTML = '<div class="card narrow center"><h2>已結束並清除資料</h2></div>'; } });
+  main.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (t) { tab = t.dataset.tab; render(); }
+  });
+
+  watchRoom(fb, rid, (next) => {
+    if (!next) { main.innerHTML = '<div class="card narrow center"><h2>房間已結束</h2></div>'; return; }
+    s = next;
+    render();
+    runJobs(s, act);
+  });
+  setInterval(() => {
+    if (!s) return;
+    runJobs(s, act);
+    const left = remainingSec(s.meta);
+    document.querySelectorAll('[data-cd]').forEach((el) => { el.textContent = left == null ? '' : `⏱ ${left}`; });
+  }, 250);
+
+  function render() {
+    if (!$('#ctl')) return;
+    patch($('#ctl'), controlsHTML(s));
+    main.querySelectorAll('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+    const pend = Object.values(s.players).filter((p) => !p.approved).length;
+    main.querySelector('[data-tab="p"]').textContent = pend ? `名單（${pend} 待核准）` : '名單';
+    let html;
+    if (tab === 'p') html = playersHTML(s);
+    else if (tab === 'b') html = `${boardHTML(s)}`;
+    else if (tab === 's') html = `<div class="settings">${settingsHTML(s)}</div>`;
+    else if (s.meta.qtype === 'answer') html = s.meta.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : answerHTML(s);
+    else html = orderHTML(s);
+    patch($('#body'), html);
+  }
+}
+</script>
+</body>
+</html>

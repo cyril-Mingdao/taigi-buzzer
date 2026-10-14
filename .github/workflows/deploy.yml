@@ -1,0 +1,58 @@
+name: 部署到 GitHub Pages
+
+# © 2026 詹宗龍（臺中明道中學）
+# Firebase Web config（apiKey、databaseURL…）不進 git，存在 repo secret FIREBASE_CONFIG_JSON，
+# 部署當下才寫成 config/firebase-config.js（做法同 taigi-whiteboard）。
+#
+# 設定方式：Settings → Secrets and variables → Actions → New repository secret
+#   名稱：FIREBASE_CONFIG_JSON
+#   值（一行 JSON）：
+#   {"apiKey":"...","authDomain":"...","databaseURL":"...","projectId":"...",
+#    "storageBucket":"...","messagingSenderId":"...","appId":"..."}
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 寫入 firebase-config.js
+        env:
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
+        run: |
+          if [ -z "$FIREBASE_CONFIG_JSON" ]; then
+            echo "::error::沒有設定 FIREBASE_CONFIG_JSON secret，搶答器無法連線，停止部署"
+            exit 1
+          fi
+          node -e "
+            const cfg = JSON.parse(process.env.FIREBASE_CONFIG_JSON);
+            const keys = ['apiKey','authDomain','databaseURL','projectId','storageBucket','messagingSenderId','appId'];
+            const out = Object.fromEntries(keys.filter((k) => cfg[k]).map((k) => [k, cfg[k]]));
+            require('fs').writeFileSync('config/firebase-config.js',
+              'export const firebaseConfig = ' + JSON.stringify(out, null, 2) + ';\n');
+          "
+          echo "已寫入 config/firebase-config.js"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4

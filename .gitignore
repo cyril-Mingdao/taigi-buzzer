@@ -1,0 +1,2 @@
+# Firebase 設定由 GitHub Actions 從 secret FIREBASE_CONFIG_JSON 產生，不進版控
+config/firebase-config.js

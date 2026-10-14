@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+  【著作權聲明】
+  台語課堂搶答（投影頁）— 教師投影 QR code、學生名單、搶答順序與作答統計
+  Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
+  本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
+  未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="author" content="詹宗龍（臺中明道中學）">
+<meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
+<title>課堂搶答・投影</title>
+<link rel="stylesheet" href="assets/app.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <span class="title">課堂搶答</span>
+  <span id="roomTag" class="badge st-open" hidden></span>
+  <span class="spacer"></span>
+  <button class="btn sm" id="bRemote" hidden>📱 手機遙控</button>
+  <button class="btn sm" id="bDrawer" hidden>⚙ 名單／設定</button>
+  <button class="btn sm" id="bSound">🔊 音效開</button>
+  <button class="btn sm" id="bFull">⛶ 全螢幕</button>
+  <span class="who" id="who"></span>
+</header>
+<main class="wrap-page" id="main"><p class="muted center">載入中…</p></main>
+<aside class="drawer" id="drawer">
+  <div class="row between"><h3>名單／設定</h3><button class="btn sm" id="bClose">✕</button></div>
+  <div class="panel" id="dPlayers"></div>
+  <div class="panel settings" id="dSettings"></div>
+</aside>
+
+<script type="module">
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel } from './assets/core.js';
+import {
+  teacherBoot, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec, patch,
+  orderHTML, answerHTML, boardHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText,
+} from './assets/teacher.js';
+import { sound } from './assets/sound.js';
+
+const main = $('#main');
+const qrCache = new Map();
+function qrImg(text) {
+  if (!qrCache.has(text)) {
+    const box = document.createElement('div');
+    new QRCode(box, { text, width: 512, height: 512, correctLevel: QRCode.CorrectLevel.M });
+    const c = box.querySelector('canvas');
+    qrCache.set(text, c ? c.toDataURL() : (box.querySelector('img') || {}).src);
+  }
+  return `<img alt="QR code" src="${qrCache.get(text)}">`;
+}
+const joinUrl = (rid) => new URL(`join.html?room=${rid}`, location.href).href;
+const remoteUrl = (rid) => new URL(`remote.html?room=${rid}`, location.href).href;
+
+/* ── 頂列按鈕 ── */
+$('#bFull').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
+$('#bSound').onclick = (e) => { sound.setMuted(!sound.muted); e.target.textContent = sound.muted ? '🔇 音效關' : '🔊 音效開'; };
+$('#bDrawer').onclick = () => $('#drawer').classList.toggle('open');
+$('#bClose').onclick = () => $('#drawer').classList.remove('open');
+
+const session = await teacherBoot(main);
+if (session) start(session);
+
+async function start({ fb, user }) {
+  mountAccountMenu(fb, user);
+  const rid = normalizeRoom(new URL(location.href).searchParams.get('room'));
+  if (rid) {
+    const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
+    if (meta && meta.ownerUid === user.uid) return enterRoom(fb, rid);
+    toast(meta ? '這個房間不是你建立的' : `房間 ${rid} 不存在或已清除`);
+    history.replaceState(null, '', location.pathname);
+  }
+  picker(fb, user);
+}
+
+async function picker(fb, user) {
+  const rooms = await listMyRooms(fb, user.uid);
+  main.innerHTML = `
+    <div class="card narrow">
+      <h2>開始一場搶答</h2>
+      <button class="btn btn-yellow big" id="bNew" style="width:100%">＋ 建立新房間</button>
+      ${rooms.length ? `<h3 style="margin-top:18px">繼續之前的房間（24 小時內）</h3>
+        <ul class="plist">${rooms.map((r) => `<li><span class="who">${r.rid}<small>${new Date(r.createdAt).toLocaleString('zh-TW')}</small></span>
+          <button class="btn sm" data-rid="${r.rid}">繼續</button></li>`).join('')}</ul>` : ''}
+    </div>`;
+  $('#bNew').onclick = async () => {
+    try { enterRoom(fb, await createRoom(fb, user.uid, newRoomId)); } catch (e) { toast(e.message); }
+  };
+  main.querySelectorAll('[data-rid]').forEach((b) => { b.onclick = () => enterRoom(fb, b.dataset.rid); });
+}
+
+function enterRoom(fb, rid) {
+  history.replaceState(null, '', `?room=${rid}`);
+  $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
+  $('#bRemote').hidden = false; $('#bDrawer').hidden = false;
+  $('#bRemote').onclick = () => {
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.innerHTML = `<div class="qrbox"><h3 style="color:#111">老師用手機掃描遙控</h3><div class="qr">${qrImg(remoteUrl(rid))}</div>
+      <p class="url">${esc(remoteUrl(rid))}</p><button class="btn btn-yellow">關閉</button></div>`;
+    m.onclick = (e) => { if (e.target === m || e.target.tagName === 'BUTTON') m.remove(); };
+    document.body.appendChild(m);
+  };
+
+  let s = null;
+  let tab = 'live';            // live：本題畫面｜board：排行榜
+  const prev = { players: 0, state: null, round: null, first: null, cd: null };
+  const act = makeActions(fb, rid, () => s);
+  bindControls(main, act);
+  bindControls($('#drawer'), act, { onCleared: () => location.replace(location.pathname) });
+  main.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (t) { tab = t.dataset.tab; render(); }
+    const c = e.target.closest('.pcard.pending');
+    if (c) act.approve(c.dataset.uid);
+  });
+
+  watchRoom(fb, rid, (next) => {
+    if (!next) { main.innerHTML = '<div class="card narrow center"><h2>房間已結束</h2><a class="btn btn-yellow" href="./">回首頁</a></div>'; return; }
+    s = next;
+    effects();
+    render();
+    runJobs(s, act);
+  });
+
+  setInterval(() => {
+    if (!s) return;
+    runJobs(s, act);
+    const left = remainingSec(s.meta);
+    document.querySelectorAll('[data-cd]').forEach((el) => { el.textContent = left == null ? '' : `${left}`; });
+    if (left != null && left !== prev.cd && left <= 3 && left > 0) sound.tick();
+    prev.cd = left;
+  }, 200);
+
+  /** 依資料變化播音效 */
+  function effects() {
+    const n = Object.keys(s.players).length;
+    if (n > prev.players) sound.join();
+    prev.players = n;
+    const m = s.meta;
+    if (prev.state !== null) {
+      if (m.state === 'open' && (prev.state !== 'open' || prev.round !== m.round)) sound.open();
+      if (m.state === 'locked' && prev.state === 'open') sound.end();
+    }
+    const first = s.ranked[0] && `${m.round}/${s.ranked[0].uid}`;
+    if (first && first !== prev.first && prev.state !== null && m.qtype !== 'answer') sound.first();
+    prev.first = first; prev.state = m.state; prev.round = m.round;
+  }
+
+  function render() {
+    const m = s.meta;
+    patch($('#dPlayers'), playersHTML(s));
+    patch($('#dSettings'), settingsHTML(s));
+
+    if (m.phase === 'lobby') {
+      const list = Object.entries(s.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+      const ok = list.filter(([, p]) => p.approved).length;
+      const pend = list.length - ok;
+      patch(main, `
+        <div class="lobby">
+          <div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div>
+            <div class="code">${rid}</div><a class="url" href="${esc(joinUrl(rid))}" target="_blank" rel="noopener">${esc(joinUrl(rid))}</a></div>
+          <div>
+            <div class="row between wrap">
+              <div class="count-big">已加入 <b>${ok}</b> 人${pend ? `　待核准 <b>${pend}</b>` : ''}</div>
+              <div class="row">
+                ${pend ? '<button class="btn" data-act="approveAll">全部核准</button>' : ''}
+                <button class="btn btn-yellow" data-act="game">進入搶答 ▶</button>
+              </div>
+            </div>
+            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。虛線卡片＝待核准（點一下核准）。</p>
+            <div class="cards">${list.map(([uid, p]) => `
+              <div class="pcard ${p.approved ? '' : 'pending'} ${s.presence[uid] ? '' : 'offline'}" data-uid="${uid}">
+                ${esc(p.name)}<small>${esc([p.cls, groupLabel(p.group)].filter(Boolean).join('・'))}</small></div>`).join('')}</div>
+          </div>
+        </div>`);
+      return;
+    }
+
+    const isAns = m.qtype === 'answer';
+    let stage;
+    if (tab === 'board') stage = boardHTML(s);
+    else if (isAns) stage = m.state === 'idle' ? '<div class="bigmsg">準備作答…</div>' : answerHTML(s, { big: true });
+    else stage = m.state === 'idle' ? '<div class="bigmsg">準備搶答…</div>' : orderHTML(s, { big: true });
+
+    patch(main, `
+      <div class="game">
+        <section class="stage">
+          <div class="stage-head">
+            <span class="q">第 ${esc(m.round)} 題</span>
+            <span class="badge st-${m.state}">${isAns ? '作答題' : '搶答題'}・${stateText(m)}</span>
+            <span class="spacer" style="flex:1"></span>
+            <span class="bigcd" data-cd></span>
+          </div>
+          <div class="tabs">
+            <button class="btn sm ${tab === 'live' ? 'on' : ''}" data-tab="live">本題</button>
+            <button class="btn sm ${tab === 'board' ? 'on' : ''}" data-tab="board">排行榜</button>
+          </div>
+          ${stage}
+        </section>
+        <aside class="side">
+          <div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div><div class="code">${rid}</div></div>
+          <div class="panel">${controlsHTML(s)}</div>
+        </aside>
+      </div>`);
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+{
+  "//": [
+    "台語課堂搶答 — Realtime Database 安全性規則（© 2026 詹宗龍（臺中明道中學））",
+    "★ 與台語電子白板共用 Firebase 專案 cyril-mingdao：搶答只用 buzzRooms／buzzOwners 兩棵樹；發布時要和白板的 rooms／roomSecrets 規則合併成同一份。",
+    "貼到 Firebase Console → Realtime Database → 規則 → 發布。",
+    "",
+    "教師：Google 登入且信箱在下列 4 個白名單內（與 taigi-quiz 收件程式 CONFIG.TEACHERS 相同），才能建立房間。",
+    "      已建立的房間只有房主（meta/ownerUid）能改設定、核准、計分、踢人、清除。",
+    "學生：匿名登入即可（不限學校帳號），只能寫自己的 players/presence/buzzes/fouls。",
+    "",
+    "搶答公平性全由這一層保證：",
+    "  - buzzes/{round}/{uid}/at 必須 === now（伺服器時間），學生無法偽造按下時間。",
+    "  - 只有 meta.state === 'open'、round 相符、已核准、只能寫一次（!data.exists()）。",
+    "  - 偷跑（state === 'idle' 時按）會留下 fouls/{round}/{uid}；penaltySec 秒內不能搶，-1 = 本題都不能搶。",
+    "  - meta.round 存成字串，才能直接跟路徑變數 $round 比對。",
+    "作答題（qtype === 'answer'）：學生寫 answers/{round}/{uid}，只能寫一次；老師公布 meta.answer 時一次更新所有人分數。",
+    "搶答題口頭作答：老師寫 judges/{round}/{uid} = right|wrong，同時更新該生分數。",
+    "整批刪除（清除房間、清空 buzzes）另開淺層規則 owner && !newData.exists()，",
+    "因為一次刪除整個子樹時逐筆規則求值不穩定（電子白板實測過）。"
+  ],
+  "rules": {
+    "buzzRooms": {
+      "$rid": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid && !newData.exists()",
+        "meta": {
+          ".write": "auth != null && auth.token.firebase.sign_in_provider === 'google.com' && auth.token.email_verified === true && (auth.token.email === 'cyril@ms.mingdao.edu.tw' || auth.token.email === 'peichi.liu@ms.mingdao.edu.tw' || auth.token.email === 'suyu.chang@ms.mingdao.edu.tw' || auth.token.email === 'mike.hsu@ms.mingdao.edu.tw') && (!data.exists() || data.child('ownerUid').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['ownerUid', 'phase', 'state', 'round'])",
+          "ownerUid": {
+            ".validate": "newData.val() === auth.uid"
+          },
+          "createdAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "phase": {
+            ".validate": "newData.isString() && newData.val().matches(/^(lobby|game)$/)"
+          },
+          "state": {
+            ".validate": "newData.isString() && newData.val().matches(/^(idle|open|locked)$/)"
+          },
+          "round": {
+            ".validate": "newData.isString() && newData.val().matches(/^[0-9]{1,5}$/)"
+          },
+          "openAt": {
+            ".validate": "newData.isNumber()"
+          },
+          "countdownSec": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 600"
+          },
+          "penaltySec": {
+            ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 60"
+          },
+          "groupMode": {
+            ".validate": "newData.isString() && newData.val().matches(/^(none|first|each|single)$/)"
+          },
+          "groupCount": {
+            ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 20"
+          },
+          "joinMode": {
+            ".validate": "newData.isString() && newData.val().matches(/^(approve|auto)$/)"
+          },
+          "qtype": {
+            ".validate": "newData.isString() && newData.val().matches(/^(buzz|answer)$/)"
+          },
+          "options": {
+            ".validate": "newData.isString() && newData.val().matches(/^(OX|AB|ABC|ABCD|ABCDE)$/)"
+          },
+          "answer": {
+            ".validate": "newData.isString() && newData.val().matches(/^[A-EOX]$/)"
+          },
+          "wrongPts": {
+            ".validate": "newData.isNumber() && newData.val() >= -5 && newData.val() <= 0"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "players": {
+          "$uid": {
+            ".write": "auth != null && ((auth.uid === $uid && root.child('buzzRooms/' + $rid + '/meta').exists() && !root.child('buzzRooms/' + $rid + '/kicked/' + $uid).exists()) || root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid)",
+            ".validate": "newData.hasChildren(['name'])",
+            "cls": {
+              ".validate": "newData.isString() && newData.val().length <= 20"
+            },
+            "name": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20"
+            },
+            "group": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 20"
+            },
+            "joinedAt": {
+              ".validate": "newData.isNumber()"
+            },
+            "approved": {
+              ".validate": "newData.isBoolean() && (newData.val() === data.val() || root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid)"
+            },
+            "score": {
+              ".validate": "newData.isNumber() && (newData.val() === data.val() || root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid)"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "presence": {
+          "$uid": {
+            ".write": "auth != null && ((auth.uid === $uid && root.child('buzzRooms/' + $rid + '/meta').exists()) || root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid)",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        "kicked": {
+          "$uid": {
+            ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+        "buzzes": {
+          ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid && !newData.exists()",
+          "$round": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'open' && root.child('buzzRooms/' + $rid + '/meta/qtype').val() !== 'answer' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true && (!root.child('buzzRooms/' + $rid + '/fouls/' + $round + '/' + $uid).exists() || (root.child('buzzRooms/' + $rid + '/meta/penaltySec').val() >= 0 && root.child('buzzRooms/' + $rid + '/fouls/' + $round + '/' + $uid + '/at').val() + root.child('buzzRooms/' + $rid + '/meta/penaltySec').val() * 1000 <= now))",
+              ".validate": "newData.hasChildren(['at'])",
+              "at": {
+                ".validate": "newData.val() === now"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        },
+        "fouls": {
+          ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid && !newData.exists()",
+          "$round": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'idle' && root.child('buzzRooms/' + $rid + '/meta/qtype').val() !== 'answer' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true",
+              ".validate": "newData.hasChildren(['at'])",
+              "at": {
+                ".validate": "newData.val() === now"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        },
+        "answers": {
+          ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid && !newData.exists()",
+          "$round": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'answer' && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'open' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true",
+              ".validate": "newData.hasChildren(['c', 'at'])",
+              "c": {
+                ".validate": "newData.isString() && newData.val().matches(/^[A-EOX]$/)"
+              },
+              "at": {
+                ".validate": "newData.val() === now"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        },
+        "judges": {
+          ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid",
+          "$round": {
+            "$uid": {
+              ".validate": "newData.isString() && newData.val().matches(/^(right|wrong)$/)"
+            }
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
+    "buzzOwners": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && auth.token.firebase.sign_in_provider === 'google.com'",
+        "$rid": {
+          ".validate": "newData.isNumber()"
+        }
+      }
+    }
+  }
+}

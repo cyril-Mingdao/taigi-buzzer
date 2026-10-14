@@ -1,0 +1,294 @@
+<!doctype html>
+<!--
+  【著作權聲明】
+  台語課堂搶答（學生頁）— 學生以手機加入房間、搶答或選答案
+  Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
+  本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
+  未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="author" content="詹宗龍（臺中明道中學）">
+<meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
+<title>課堂搶答</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<main class="stu" id="main"><p class="muted center">載入中…</p></main>
+
+<script type="module">
+import {
+  loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
+  DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
+  optionList, optionText,
+} from './assets/core.js';
+import { sound } from './assets/sound.js';
+
+const main = $('#main');
+const params = new URL(location.href).searchParams;
+// ?slot=2 讓同一台電腦可以開多個學生分頁測試（不同的匿名身分）
+const slot = (params.get('slot') || '').replace(/\W/g, '').slice(0, 8);
+const LS = `buzz.profile${slot ? `.${slot}` : ''}`;
+const loadProfile = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } };
+const saveProfile = (p) => { try { localStorage.setItem(LS, JSON.stringify(p)); } catch {} };
+
+let rid = normalizeRoom(params.get('room'));
+if (!rid) askRoom(); else boot();
+
+function askRoom() {
+  main.innerHTML = `
+    <div class="card"><h2>加入搶答</h2>
+      <form id="f"><label>房間碼<input id="code" maxlength="6" autocomplete="off" placeholder="例如 7K3QXA" style="text-transform:uppercase;letter-spacing:.2em"></label>
+      <button class="btn btn-yellow big">進入</button></form></div>`;
+  $('#f').onsubmit = (e) => {
+    e.preventDefault();
+    rid = normalizeRoom($('#code').value);
+    if (rid.length !== 6) return toast('房間碼是 6 碼');
+    history.replaceState(null, '', `?room=${rid}${slot ? `&slot=${slot}` : ''}`);
+    boot();
+  };
+}
+
+async function boot() {
+  let fb;
+  try {
+    fb = await loadFirebase({ appName: `student${slot ? `-${slot}` : ''}` });
+  } catch (e) {
+    if (e.code === 'NO_CONFIG') return showSetupNeeded(main);
+    throw e;
+  }
+  let user;
+  try {
+    user = fb.auth.currentUser || (await new Promise((res) => { const off = fb.onAuthStateChanged(fb.auth, (u) => { off(); res(u); }); }));
+    if (!user || !user.isAnonymous) user = (await fb.signInAnonymously(fb.auth)).user;
+  } catch (e) {
+    main.innerHTML = `<div class="card center"><h2>無法連線</h2><p>${esc(authErrorText(e))}</p></div>`;
+    return;
+  }
+  const uid = user.uid;
+  const r = (p = '') => fb.ref(fb.db, `buzzRooms/${rid}${p}`);
+
+  // 上線狀態：斷線時自動移除，老師端顯示灰卡
+  fb.onValue(fb.ref(fb.db, '.info/connected'), (snap) => {
+    if (snap.val() !== true) return;
+    fb.onDisconnect(r(`/presence/${uid}`)).remove();
+    fb.set(r(`/presence/${uid}`), true).catch(() => {});
+  });
+
+  let s = null;
+  let editing = false;
+  let pending = null;         // 剛按下、等資料庫回報的動作（避免畫面閃回）
+  const prev = { state: null, round: null, answer: null, judged: null };
+
+  fb.onValue(r(), (snap) => {
+    const v = snap.val();
+    if (!v || !v.meta) {
+      main.innerHTML = s
+        ? '<div class="card center"><h2>本次搶答已結束</h2><p>謝謝參與！</p></div>'
+        : `<div class="card center"><h2>找不到房間 ${esc(rid)}</h2><p>請確認大螢幕上的房間碼。</p><a class="btn btn-yellow" href="join.html">重新輸入</a></div>`;
+      s = null;
+      return;
+    }
+    const meta = { ...DEFAULT_META, ...v.meta };
+    const players = v.players || {};
+    s = {
+      meta, players, me: players[uid] || null,
+      kicked: !!(v.kicked || {})[uid],
+      buzz: ((v.buzzes || {})[meta.round] || {})[uid] || null,
+      foul: ((v.fouls || {})[meta.round] || {})[uid] || null,
+      answer: ((v.answers || {})[meta.round] || {})[uid] || null,
+      judge: ((v.judges || {})[meta.round] || {})[uid] || null,
+      ranked: rankBuzzes((v.buzzes || {})[meta.round], players, meta),
+    };
+    if (prev.round !== meta.round) pending = null;
+    effects();
+    render();
+  }, (e) => { main.innerHTML = `<div class="card center"><h2>無法讀取房間</h2><p>${esc(authErrorText(e))}</p></div>`; });
+
+  setInterval(() => { if (s && s.foul && s.meta.qtype !== 'answer') render(); }, 250);
+
+  function effects() {
+    const m = s.meta;
+    if (prev.state !== null && m.state === 'open' && (prev.state !== 'open' || prev.round !== m.round)) {
+      sound.open();
+      navigator.vibrate && navigator.vibrate(120);
+    }
+    if (m.answer && m.answer !== prev.answer && s.answer) (s.answer.c === m.answer ? sound.first : sound.end)();
+    if (s.judge && s.judge !== prev.judged) (s.judge === 'right' ? sound.first : sound.end)();
+    prev.state = m.state; prev.round = m.round; prev.answer = m.answer || null; prev.judged = s.judge;
+  }
+
+  /* ── 畫面 ── */
+  function render() {
+    if (!s) return;
+    // 只有遊戲中的按鈕畫面用 main._html 快取比對；其他畫面切回來時要清掉
+    if (!(s.me && s.me.approved && s.meta.phase === 'game' && !editing && !s.kicked
+      && (s.meta.groupMode === 'none' || s.me.group))) main._html = null;
+    if (s.kicked) { main.innerHTML = '<div class="card center"><h2>你已被老師移出這個房間</h2></div>'; return; }
+    // 老師中途改成分組模式時，還沒有組別的人要先補選組別
+    if (!s.me || editing || (s.meta.groupMode !== 'none' && !s.me.group)) return renderForm();
+    if (!s.me.approved) return renderPending();
+    renderPlay();
+  }
+
+  function classOptions(cur) {
+    return `<option value="">請選擇</option>${DEPARTMENTS.map((d) => `<optgroup label="${d.name}">${d.classes
+      .map((c) => `<option ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</optgroup>`).join('')}
+      <option value="${OTHER_CLASS}" ${cur === OTHER_CLASS ? 'selected' : ''}>其他（非本校／不分班）</option>`;
+  }
+
+  function renderForm() {
+    if (document.activeElement && main.contains(document.activeElement) && $('#jf')) return; // 填寫中不重繪
+    const m = s.meta;
+    const p = s.me || loadProfile();
+    const takenGroups = new Set(Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group).map(([, q]) => q.group));
+    const groupSel = m.groupMode === 'none' ? '' : `
+      <label>組別<select id="grp" required><option value="">請選擇</option>${Array.from({ length: m.groupCount }, (_, i) => i + 1)
+        .map((g) => {
+          const full = m.groupMode === 'single' && takenGroups.has(g);
+          return `<option value="${g}" ${p.group === g ? 'selected' : ''} ${full ? 'disabled' : ''}>${groupLabel(g)}${full ? '（已有人）' : ''}</option>`;
+        }).join('')}</select></label>`;
+    main.innerHTML = `
+      <div class="card">
+        <h2>加入搶答 <small class="muted">${rid}</small></h2>
+        <form id="jf">
+          <label>班級<select id="cls" required>${classOptions(p.cls)}</select></label>
+          <label>${m.groupMode === 'none' ? '姓名' : '姓名／暱稱'}<input id="nm" maxlength="20" required value="${esc(p.name || '')}" autocomplete="off"></label>
+          ${groupSel}
+          <button class="btn btn-yellow big">${s.me ? '更新資料' : '加入'}</button>
+          ${s.me ? '<button type="button" class="btn" id="cancel">取消</button>' : ''}
+        </form>
+      </div>`;
+    if ($('#cancel')) $('#cancel').onclick = () => { editing = false; render(); };
+    $('#jf').onsubmit = async (e) => {
+      e.preventDefault();
+      const data = {
+        cls: $('#cls').value,
+        name: $('#nm').value.trim().slice(0, 20),
+        group: $('#grp') ? Number($('#grp').value) || 0 : 0,
+      };
+      if (!data.cls || !data.name) return toast('請選班級並填姓名');
+      if (m.groupMode !== 'none' && !data.group) return toast('請選組別');
+      saveProfile(data);
+      try {
+        await fb.update(r(`/players/${uid}`), s.me ? data : { ...data, joinedAt: fb.serverTimestamp() });
+        editing = false;
+        document.activeElement && document.activeElement.blur();
+        render();
+      } catch (err) { toast(authErrorText(err)); }
+    };
+  }
+
+  function header() {
+    const me = s.me;
+    return `<div class="me"><div><div class="name">${esc(me.name)}</div>
+      <div class="muted">${esc([me.cls, groupLabel(me.group)].filter(Boolean).join('・'))}</div></div>
+      <div class="score">${me.score || 0} 分</div></div>`;
+  }
+
+  function renderPending() {
+    main.innerHTML = `${header()}
+      <div class="card center"><h2>已送出，等待老師核准…</h2><p>請看大螢幕上有沒有你的名字。</p>
+      <button class="btn" id="edit">修改資料</button></div>`;
+    $('#edit').onclick = () => { editing = true; render(); };
+  }
+
+  function renderPlay() {
+    const m = s.meta;
+    if (m.phase === 'lobby') {
+      return void (main.innerHTML = `${header()}<div class="card center"><h2>✅ 已加入！</h2><p>等老師開始…</p></div>`);
+    }
+    if (m.qtype === 'answer') return renderAnswer();
+    renderBuzz();
+  }
+
+  function myRank() {
+    const grouped = (s.meta.groupMode === 'first' || s.meta.groupMode === 'single') && s.me.group;
+    const i = s.ranked.findIndex((it) => it.uid === uid || (grouped && it.player.group === s.me.group));
+    return i < 0 ? null : { n: i + 1, mine: s.ranked[i].uid === uid };
+  }
+
+  function renderBuzz() {
+    const m = s.meta;
+    let cls = 'ready', label = '準備', status = `第 ${esc(m.round)} 題`, enabled = true;
+    const lockLeft = s.foul && m.penaltySec > 0 ? Math.ceil((s.foul.at + m.penaltySec * 1000 - serverNow()) / 1000) : 0;
+    const rank = myRank();
+    const groupTaken = rank && !rank.mine; // 同組已有人搶到（first/single 模式）
+
+    if (s.buzz || pending === `buzz${m.round}`) {
+      cls = s.judge === 'right' ? 'won' : 'done';
+      label = rank ? `第 ${rank.n} 名` : '已按下';
+      status = s.judge === 'right' ? '🎉 答對了！' : s.judge === 'wrong' ? '答錯了，下次加油' : '已搶答，等老師叫你';
+      enabled = false;
+    } else if (groupTaken) {
+      cls = 'off'; label = `第 ${rank.n} 名`; status = '同組隊友已搶到'; enabled = false;
+    } else if (s.foul && (m.penaltySec === -1 || lockLeft > 0)) {
+      cls = 'foul'; enabled = false;
+      label = m.penaltySec === -1 ? '偷跑' : `${lockLeft}`;
+      status = m.penaltySec === -1 ? '偷跑！本題不能搶' : '偷跑！暫時鎖定';
+    } else if (m.state === 'open') {
+      cls = 'go'; label = '搶！'; status = '快按！';
+    } else if (m.state === 'locked') {
+      cls = 'off'; label = '鎖定'; status = '本題已鎖定'; enabled = false;
+    } else {
+      status = '等老師說開始…（太早按會偷跑）';
+    }
+    const html = `${header()}<div class="status">${status}</div>
+      <button class="buzz ${cls}" id="buzz" ${enabled ? '' : 'disabled'}>${label}</button>`;
+    if (main._html !== html) { main._html = html; main.innerHTML = html; $('#buzz').onpointerdown = press; }
+  }
+
+  async function press(e) {
+    e.preventDefault();
+    const m = s.meta;
+    if (m.state === 'open') {
+      pending = `buzz${m.round}`;
+      sound.buzz(); navigator.vibrate && navigator.vibrate(60);
+      render();
+      try { await fb.set(r(`/buzzes/${m.round}/${uid}`), { at: fb.serverTimestamp() }); }
+      catch { pending = null; toast('沒搶到（可能已鎖定）'); render(); }
+    } else if (m.state === 'idle') {
+      sound.foul(); navigator.vibrate && navigator.vibrate([80, 60, 80]);
+      try { await fb.set(r(`/fouls/${m.round}/${uid}`), { at: fb.serverTimestamp() }); } catch {}
+    }
+  }
+
+  function renderAnswer() {
+    const m = s.meta;
+    const opts = optionList(m.options);
+    const mine = s.answer ? s.answer.c : (pending && pending.startsWith(`ans${m.round}:`) ? pending.split(':')[1] : null);
+    const canPick = m.state === 'open' && !mine;
+    let status;
+    if (m.answer) status = !mine ? `正解是 ${optionText(m.answer)}，你沒有作答` : mine === m.answer ? '🎉 答對了！+1' : `答錯了，正解是 ${optionText(m.answer)}`;
+    else if (mine) status = '已送出，等老師公布答案';
+    else if (m.state === 'open') status = '請選答案（只能選一次）';
+    else if (m.state === 'locked') status = '時間到';
+    else status = `第 ${esc(m.round)} 題・等老師說開始…`;
+    const html = `${header()}<div class="status">${status}</div>
+      <div class="opts">${opts.map((o) => {
+        let c = '';
+        if (m.answer && o === m.answer) c = 'correct';
+        else if (m.answer && o === mine) c = 'wrong';
+        else if (o === mine) c = 'picked';
+        return `<button class="btn ${c}" data-o="${o}" ${canPick ? '' : 'disabled'}>${optionText(o)}</button>`;
+      }).join('')}</div>`;
+    if (main._html === html) return;
+    main._html = html; main.innerHTML = html;
+    main.querySelectorAll('[data-o]').forEach((b) => {
+      b.onclick = async () => {
+        if (!canPick) return;
+        pending = `ans${m.round}:${b.dataset.o}`;
+        sound.buzz(); navigator.vibrate && navigator.vibrate(40);
+        render();
+        try { await fb.set(r(`/answers/${m.round}/${uid}`), { c: b.dataset.o, at: fb.serverTimestamp() }); }
+        catch { pending = null; toast('送出失敗（可能已鎖定）'); render(); }
+      };
+    });
+  }
+
+}
+</script>
+</body>
+</html>

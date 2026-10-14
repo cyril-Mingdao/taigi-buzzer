@@ -135,7 +135,7 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .btn-danger, .card .btn-danger { background: var(--red); border-color: var(--red); color: var(--white); }
 
 /* ── 學生頁 ── */
-.stu { max-width: 520px; margin: 0 auto; padding: 16px; min-height: 100vh; display: flex; flex-direction: column; gap: 14px; }
+.stu { max-width: 520px; margin: 0 auto; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); height: 100vh; height: 100dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .stu form { display: grid; gap: 12px; }
 .stu label { display: grid; gap: 4px; font-weight: 700; }
 .stu input, .stu select { padding: 12px; border-radius: 10px; border: 2px solid var(--black); font-size: 1.1rem; background: var(--white); color: var(--black); width: 100%; }
@@ -143,7 +143,7 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .me .name { font-size: 1.2rem; font-weight: 900; }
 .me .score { color: var(--yellow); font-weight: 900; font-size: 1.3rem; }
 .status { text-align: center; font-size: 1.4rem; font-weight: 800; min-height: 2em; }
-.buzz { display: block; width: min(90vw, 62vh, 480px); height: min(90vw, 62vh, 480px); border-radius: 50%; margin: 2vh auto 0; flex-shrink: 0; border: 10px solid var(--white); background: var(--grey-d); color: var(--white); font-size: 3rem; font-weight: 900; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation; transition: transform .05s; }
+.buzz { display: block; width: min(86vw, 56dvh, 480px); height: min(86vw, 56dvh, 480px); border-radius: 50%; margin: 1dvh auto 0; flex-shrink: 0; border: 10px solid var(--white); background: var(--grey-d); color: var(--white); font-size: 3rem; font-weight: 900; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation; transition: transform .05s; }
 .buzz:active { transform: scale(.96); }
 .buzz.ready { background: var(--grey-d); color: var(--muted); }
 .buzz.go { background: var(--yellow); color: var(--black); border-color: var(--white); animation: pulse 1s infinite; }
@@ -153,8 +153,8 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .buzz.foul { border-color: var(--red); color: var(--red); }
 @keyframes pulse { 50% { box-shadow: 0 0 0 18px rgba(255,212,0,.25); } }
 
-#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(150%); background: var(--yellow); color: var(--black); padding: 10px 18px; border-radius: 10px; font-weight: 700; transition: transform .25s; z-index: 50; max-width: 92vw; }
-#toast.show { transform: translateX(-50%); }
+#toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%) translateY(20px); opacity: 0; visibility: hidden; background: var(--yellow); color: var(--black); padding: 10px 18px; border-radius: 10px; font-weight: 700; transition: transform .25s, opacity .25s, visibility .25s; z-index: 50; max-width: 92vw; }
+#toast.show { transform: translateX(-50%); opacity: 1; visibility: visible; }
 
 @media (max-width: 900px) {
   .lobby .qrbox { width: min(100%, calc(100dvh - 230px), 480px); min-width: 0; justify-self: center; }
@@ -197,8 +197,8 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .winners { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { background: var(--yellow); color: var(--black); border-radius: 999px; padding: 4px 12px; font-weight: 800; }
 .chip small { color: #444; margin-left: 4px; }
-.opts { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; flex: 1; }
-.opts .btn { font-size: 3rem; min-height: 22vh; border-width: 4px; border-radius: 18px; }
+.opts { display: grid; grid-template-columns: repeat(2, 1fr); grid-auto-rows: minmax(0, 1fr); gap: 12px; flex: 1 1 0; min-height: 0; max-height: 62dvh; }
+.opts .btn { font-size: clamp(2rem, 7dvh, 3rem); min-height: 0; border-width: 4px; border-radius: 18px; }
 .opts .btn.picked { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
 .opts .btn.correct { background: var(--green); border-color: var(--green); color: var(--white); }
 .opts .btn.wrong { background: var(--red); border-color: var(--red); color: var(--white); }
@@ -226,8 +226,8 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .pod-name { font-weight: 900; font-size: clamp(1.1rem, 3.4vh, 2rem); word-break: break-all; }
 .pod-score { font-weight: 800; font-size: clamp(1rem, 3vh, 1.6rem); }
 .board.rest { max-width: 640px; width: 100%; margin: 0 auto; }
-.opts.many { grid-template-columns: repeat(2, 1fr); gap: 8px; }
-.opts.many .btn { font-size: 1.8rem; min-height: 9vh; }
+.opts.many { grid-template-columns: repeat(2, 1fr); gap: 8px; max-height: none; }
+.opts.many .btn { font-size: clamp(1.3rem, 4dvh, 1.8rem); }
 .answer-view.big.many .bar .opt { font-size: 1.8rem; }
 .answer-view.big.many .bar .track { height: 30px; }
 .answer-view.big.many .bars { gap: 4px; }
@@ -242,3 +242,11 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .new-room label { display: grid; gap: 4px; font-weight: 700; }
 .new-room input { padding: 12px; border: 2px solid var(--black); border-radius: 10px; font-size: 1.15rem; }
 .settings input[data-set] { background: var(--black); color: var(--white); border: 1px solid var(--muted); border-radius: 8px; padding: 6px; max-width: 64%; }
+
+/* ── v08：學生頁標題列縮小、版本標示 ── */
+.stu .me .name { font-size: 1.1rem; }
+.stu .status { font-size: 1.2rem; min-height: 1.6em; }
+.stu .card { padding: 16px; }
+.ver { color: var(--muted); font-size: .7rem; opacity: .6; }
+@media (max-height: 640px) { .stu .room-cls { padding: 2px; font-size: .9rem; } .stu .status { font-size: 1.05rem; } }
+.card.dialog p { white-space: pre-line; }

@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js';
+} from './core.js?v=8';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -576,7 +576,7 @@ async function saveScores(fb, rid, getState) {
       result = { ok: true, files: files.map((f) => ({ name: f.name, url: '#' })) };
       console.log('[mock] 成績檔', files);
     } else {
-      if (!SAVE_ENDPOINT) { toast('尚未設定存檔網址（core.js 的 SAVE_ENDPOINT）'); return false; }
+      if (!SAVE_ENDPOINT) throw new Error('尚未設定存檔網址（core.js 的 SAVE_ENDPOINT）');
       const accessToken = await googleAccessToken();     // 在點擊當下開 Google 驗證視窗
       toast('儲存中…', 10000);
       const res = await fetch(SAVE_ENDPOINT, {
@@ -584,6 +584,7 @@ async function saveScores(fb, rid, getState) {
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },     // 避免 CORS 預檢
         body: JSON.stringify({ accessToken, room: rid, files }),
       });
+      if (!res.ok) throw new Error(`存檔服務回應 HTTP ${res.status}`);
       result = await res.json();
     }
     if (!result.ok) throw new Error(result.error || '存檔失敗');
@@ -597,8 +598,26 @@ async function saveScores(fb, rid, getState) {
     });
     return true;
   } catch (e) {
-    if (e.code === 'auth/popup-closed-by-user') { toast('已取消驗證，成績尚未儲存'); return false; }
-    toast(`成績儲存失敗，房間保留：${e.message || e}`, 6000);
+    const msg = e.code === 'auth/popup-closed-by-user' ? '已取消 Google 驗證'
+      : e.code === 'auth/popup-blocked' ? '瀏覽器擋住了 Google 驗證視窗，請允許彈出式視窗後再按一次'
+      : (e.message || String(e));
+    const dl = await ask({
+      title: '⚠ 成績尚未存到雲端硬碟（房間保留）',
+      message: `原因：${msg}\n可以再按一次「儲存成績」，或先把成績下載到這台裝置。`,
+      ok: '下載 CSV', cancel: '關閉',
+    });
+    if (dl) downloadFiles(files);
     return false;
+  }
+}
+
+/** 備案：把 CSV 直接下載到目前裝置（加 BOM，Excel 開中文不亂碼）。 */
+function downloadFiles(files) {
+  for (const f of files) {
+    const url = URL.createObjectURL(new Blob(['\uFEFF' + f.csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 }

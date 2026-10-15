@@ -11,7 +11,7 @@
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '9';
+export const APP_VERSION = '10';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -47,16 +47,18 @@ export const DEFAULT_META = {
   groupMode: 'none',     // none 個人賽｜first 一組只算第一個按的｜each 每人各自計算｜single 一組只限一台手機
   groupCount: 6,
   joinMode: 'approve',   // approve 老師核准｜auto 自動核准
-  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜abcd 選擇 A–D｜aj 選擇 A–J
+  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J
   wrongPts: 0,           // 搶答答錯扣幾分（0 或負數）
   // answer：是非／選擇題老師選的標準答案（未公布時不存在）
 };
-export const QTYPES = { buzz: '搶答', tf: '是非', abcd: '選擇 A–D', aj: '選擇 A–J' };
+export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: '選擇 A–D', af: '選擇 A–F', aj: '選擇 A–J' };
 export const isChoice = (m) => m.qtype !== 'buzz';
 /** 各題型的選項；舊版 qtype 'answer' 依 options 欄位相容。 */
 export function optionList(m) {
   if (m.qtype === 'tf') return ['O', 'X'];
+  if (m.qtype === 'ab') return ['A', 'B'];
   if (m.qtype === 'abcd') return ['A', 'B', 'C', 'D'];
+  if (m.qtype === 'af') return ['A', 'B', 'C', 'D', 'E', 'F'];
   if (m.qtype === 'aj') return 'ABCDEFGHIJ'.split('');
   if (m.qtype === 'answer') return m.options === 'OX' ? ['O', 'X'] : String(m.options || 'ABCD').split('');
   return [];
@@ -103,7 +105,7 @@ export async function loadFirebase({ appName } = {}) {
   } catch {}
   let cfg;
   try {
-    cfg = await import('../config/firebase-config.js?v=9');
+    cfg = await import('../config/firebase-config.js?v=10');
   } catch {
     throw Object.assign(new Error('NO_CONFIG'), { code: 'NO_CONFIG' });
   }

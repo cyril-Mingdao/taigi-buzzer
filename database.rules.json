@@ -2,7 +2,7 @@
   "//": [
     "台語課堂搶答 — Realtime Database 安全性規則（© 2026 詹宗龍（臺中明道中學））",
     "★ 與台語電子白板共用 Firebase 專案 cyril-mingdao：搶答只用 buzzRooms／buzzOwners 兩棵樹；發布時要和白板的 rooms／roomSecrets 規則合併成同一份。",
-    "v06：題型 buzz（搶答）／tf（是非）／abcd（選擇 A–D）／aj（選擇 A–J）；keys/{round} 存每題標準答案；phase 多了 ended。",
+    "v06：題型 buzz（搶答）／tf（是非）／ab（選擇 A–B）／abcd（選擇 A–D）／af（選擇 A–F）／aj（選擇 A–J）；keys/{round} 存每題標準答案；phase 多了 ended。",
     "buzzLive/{rid}：公開房間清單摘要（老師名、人數、階段），任何登入者（含匿名的投影頁）可讀，只有房主可寫。",
     "v07：meta.className／buzzLive.className＝老師建房時輸入的班級名稱（成績檔名用）。",
     "貼到 Firebase Console → Realtime Database → 規則 → 發布。",
@@ -63,7 +63,7 @@
             ".validate": "newData.isString() && newData.val().matches(/^(approve|auto)$/)"
           },
           "qtype": {
-            ".validate": "newData.isString() && newData.val().matches(/^(buzz|tf|abcd|aj)$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^(buzz|tf|ab|abcd|af|aj)$/)"
           },
           "answer": {
             ".validate": "newData.isString() && newData.val().matches(/^[A-JOX]$/)"
@@ -154,7 +154,7 @@
           ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid && !newData.exists()",
           "$round": {
             "$uid": {
-              ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && (root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'tf' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'abcd' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'aj') && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'open' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true",
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && (root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'tf' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'ab' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'abcd' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'af' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'aj') && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'open' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true",
               ".validate": "newData.hasChildren(['c', 'at'])",
               "c": {
                 ".validate": "newData.isString() && newData.val().matches(/^[A-JOX]$/)"

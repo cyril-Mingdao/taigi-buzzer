@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   【著作權聲明】
-  台語課堂搶答（手機遙控頁）— 教師在手機上開始／鎖定／重置、判定對錯、公布正解、核准名單
+  台語課堂搶答（手機遙控頁）— 教師在手機上開始／鎖定／重置、判定對錯、公布正解、核准名單、看學生即時作答
   Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
   本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
   未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
@@ -13,7 +13,7 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・遙控</title>
-<link rel="stylesheet" href="assets/app.css?v=10">
+<link rel="stylesheet" href="assets/app.css?v=11">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   .remote { display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
@@ -26,7 +26,7 @@
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v10">遙控</span>
+  <span class="title" title="v11">遙控</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <span class="spacer"></span>
   <span class="who" id="who"></span>
@@ -34,11 +34,11 @@
 <main class="wrap-page" id="main"><p class="muted center">載入中…</p></main>
 
 <script type="module">
-import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js?v=10';
+import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js?v=11';
 import {
   teacherBoot, mountAccountMenu, watchRoom, makeActions, runJobs, remainingSec, patch,
-  orderHTML, answerHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=10';
+  orderHTML, liveAnswersHTML, notBuzzedHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
+} from './assets/teacher.js?v=11';
 
 const base = new URL('./', location.href).href;
 const joinUrl = (id) => `${base}join.html?room=${id}`;
@@ -71,6 +71,7 @@ async function start({ fb, user }) {
 
   let s = null;
   let tab = 'j';
+  let lastState = null;
   const act = makeActions(fb, rid, () => s);
   main.innerHTML = `
     <div class="remote">
@@ -92,6 +93,9 @@ async function start({ fb, user }) {
 
   watchRoom(fb, rid, (next) => {
     if (!next) { main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${base}">回首頁</a></div>`; return; }
+    // 按下「開始作答／搶答」時自動切到「本題」，老師直接看到學生即時作答
+    if (lastState && lastState !== 'open' && next.meta.state === 'open') tab = 'q';
+    lastState = next.meta.state;
     s = next;
     render();
     runJobs(s, act);
@@ -112,6 +116,9 @@ async function start({ fb, user }) {
     main.querySelector('[data-tab="p"]').textContent = pend ? `名單（${pend} 待核准）` : '名單';
     let html;
     const m = s.meta;
+    const total = Object.values(s.players).filter((p) => p.approved).length;
+    const got = Object.keys(isChoice(m) ? s.answers : s.buzzes).filter((u) => s.players[u] && s.players[u].approved).length;
+    main.querySelector('[data-tab="q"]').textContent = m.state !== 'idle' && m.phase !== 'ended' && total ? `本題 ${got}/${total}` : '本題';
     if (tab === 'j') {
       const ok = Object.values(s.players).filter((p) => p.approved).length;
       html = `<div class="join-info">
@@ -126,8 +133,8 @@ async function start({ fb, user }) {
     else if (tab === 'b') html = `${boardHTML(s)}`;
     else if (tab === 's') html = `<div class="settings">${settingsHTML(s)}</div>`;
     else if (m.phase === 'ended') html = podiumHTML(s);
-    else if (isChoice(m)) html = m.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : answerHTML(s);
-    else html = orderHTML(s);
+    else if (isChoice(m)) html = m.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : liveAnswersHTML(s);
+    else html = orderHTML(s) + notBuzzedHTML(s);
     patch($('#body'), html);
   }
 }

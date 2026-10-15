@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=10';
+} from './core.js?v=11';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -364,6 +364,54 @@ export function answerHTML(s, { big = false } = {}) {
       <div class="winners">${winners.map((uid) => `<span class="chip">${unitHTML(s.players[uid], m)}<b>+${pts[uid]}</b></span>`).join('')
         || '<span class="muted">沒有人答對</span>'}</div>` : ''}
   </div>`;
+}
+
+/** 遙控頁專用（只給老師看）：每位學生的即時作答——選了什麼、第幾個交、花幾秒；未作答的列在後面。
+    公布前就顯示各選項人數，公布後標出對錯與本題得分。 */
+export function liveAnswersHTML(s) {
+  const m = s.meta;
+  const opts = optionList(m);
+  const players = Object.entries(s.players).filter(([, p]) => p.approved);
+  const done = players.filter(([uid]) => s.answers[uid])
+    .sort((a, b) => s.answers[a[0]].at - s.answers[b[0]].at);
+  const wait = players.filter(([uid]) => !s.answers[uid])
+    .sort((a, b) => playerLabel(a[1]).localeCompare(playerLabel(b[1]), 'zh-Hant'));
+  const counts = Object.fromEntries(opts.map((o) => [o, 0]));
+  for (const [uid] of done) if (s.answers[uid].c in counts) counts[s.answers[uid].c]++;
+  const revealed = !!m.answer;
+  const pts = revealed ? choicePoints(s.answers, m.answer) : {};
+  const dist = opts.map((o) => `<span class="dist-item ${revealed && o === m.answer ? 'correct' : ''}">
+    <b>${optionText(o)}</b>${counts[o]}</span>`).join('');
+  const off = (uid) => (s.presence[uid] ? '' : ' offline');
+  const doneRows = done.map(([uid, p], i) => {
+    const a = s.answers[uid];
+    const dt = typeof m.openAt === 'number' ? `${Math.max(0, (a.at - m.openAt) / 1000).toFixed(1)}s` : '';
+    const mark = !revealed ? '' : a.c === m.answer ? 'right' : 'wrong';
+    return `<li class="${mark}${off(uid)}"><span class="rank">${i + 1}</span>
+      <span class="who">${unitHTML(p, m)}</span>
+      <span class="dt">${dt}</span>
+      <span class="pick">${optionText(a.c)}</span>
+      <span class="gain">${revealed ? (pts[uid] ? `+${pts[uid]}` : '✘') : ''}</span></li>`;
+  }).join('');
+  const waitRows = wait.map(([uid, p]) => `<li class="waiting${off(uid)}"><span class="rank">–</span>
+    <span class="who">${unitHTML(p, m)}</span><span class="pick">…</span></li>`).join('');
+  return `<div class="live-ans">
+    <div class="live-head">已作答 <b>${done.length}</b> / ${players.length}
+      ${wait.length ? `<span class="muted">（未作答 ${wait.length}）</span>` : '<span class="ok-all">全員作答</span>'}</div>
+    <div class="dist">${dist}</div>
+    <ol class="live-list">${doneRows}${waitRows || ''}</ol>
+    ${players.length ? '' : '<p class="muted center">還沒有已核准的學生</p>'}
+  </div>`;
+}
+
+/** 遙控頁：搶答題尚未按下的學生。 */
+export function notBuzzedHTML(s) {
+  const players = Object.entries(s.players).filter(([uid, p]) => p.approved && !s.buzzes[uid]);
+  const total = Object.values(s.players).filter((p) => p.approved).length;
+  if (!total || s.meta.state === 'idle') return '';
+  return `<div class="live-head small">已搶答 <b>${total - players.length}</b> / ${total}</div>
+    ${players.length ? `<div class="wait-chips">${players.map(([uid, p]) =>
+      `<span class="wchip${s.presence[uid] ? '' : ' offline'}">${unitHTML(p, s.meta)}</span>`).join('')}</div>` : ''}`;
 }
 
 export function boardHTML(s) {

@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   【著作權聲明】
-  台語課堂搶答（投影頁）— 公開房間清單、QR code、學生名單、搶答順序、作答統計與頒獎台；教師登入後可建立與控制房間
+  台語課堂搶答（投影頁）— 公開房間清單、QR code、學生名單、搶答順序、作答統計與頒獎台；教師登入後可建立與控制房間、看學生即時作答
   Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
   本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
   未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
@@ -13,12 +13,12 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=12">
+<link rel="stylesheet" href="assets/app.css?v=13">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v12">課堂搶答</span>
+  <span class="title" title="v13">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
@@ -35,12 +35,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=12';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=13';
 import {
   bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
-  patch, orderHTML, answerHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=12';
-import { sound } from './assets/sound.js?v=12';
+  patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
+} from './assets/teacher.js?v=13';
+import { sound } from './assets/sound.js?v=13';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -181,6 +181,7 @@ async function picker(fb, user) {
 
 function enterRoom(fb, rid, { owner }) {
   history.replaceState(null, '', `?room=${rid}`);
+  document.body.classList.add('fit');     // 電腦橫式畫面：整頁固定在視窗內，不出現捲軸
   $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
   fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta/className`)).then((v) => { if (v.val()) $('#roomTag').textContent = `${v.val()}・${rid}`; }).catch(() => {});
   $('#bBack').hidden = owner;
@@ -198,6 +199,9 @@ function enterRoom(fb, rid, { owner }) {
 
   let s = null;
   let tab = 'live';            // live：本題畫面｜board：排行榜
+  // 教師模式的「學生答案」面板（王曉明 A）；要投影給學生看時可隱藏，記在這台電腦
+  let showLive = true;
+  try { showLive = localStorage.getItem('buzz.showLive') !== '0'; } catch {}
   const prev = { players: 0, state: null, round: null, first: null, cd: null, phase: null };
   const act = owner ? makeActions(fb, rid, () => s) : null;
   if (owner) {
@@ -207,6 +211,11 @@ function enterRoom(fb, rid, { owner }) {
   main.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
     if (t) { tab = t.dataset.tab; render(); }
+    if (e.target.closest('[data-live-toggle]')) {
+      showLive = !showLive;
+      try { localStorage.setItem('buzz.showLive', showLive ? '1' : '0'); } catch {}
+      render();
+    }
     const c = e.target.closest('.pcard.pending');
     if (c && owner) act.approve(c.dataset.uid);
   });
@@ -296,6 +305,11 @@ function enterRoom(fb, rid, { owner }) {
     if (tab === 'board') stage = boardHTML(s);
     else if (choice) stage = m.state === 'idle' ? '<div class="bigmsg">準備作答…</div>' : answerHTML(s, { big: true });
     else stage = m.state === 'idle' ? '<div class="bigmsg">準備搶答…</div>' : orderHTML(s, { big: true, judging: owner });
+    // 教師模式：本題進行中時，旁邊加「學生答案」面板（是非／選擇＝王曉明 A；搶答＝還沒按的人）
+    const live = owner && tab === 'live' && m.state !== 'idle' && showLive
+      ? (choice ? liveChipsHTML(s) : notBuzzedHTML(s)) : '';
+    const liveBtn = owner && tab === 'live'
+      ? `<button class="btn sm live-toggle" data-live-toggle>${showLive ? '🙈 隱藏學生答案' : '👁 顯示學生答案'}</button>` : '';
 
     patch(main, `
       <div class="game">
@@ -310,10 +324,14 @@ function enterRoom(fb, rid, { owner }) {
           <div class="tabs">
             <button class="btn sm ${tab === 'live' ? 'on' : ''}" data-tab="live">本題</button>
             <button class="btn sm ${tab === 'board' ? 'on' : ''}" data-tab="board">排行榜</button>
+            ${liveBtn}
           </div>
-          ${stage}
+          <div class="stage-body${live ? ' split' : ''}">
+            <div class="stage-main">${stage}</div>
+            ${live ? `<div class="stage-live panel">${live}</div>` : ''}
+          </div>
         </section>
-        <aside class="side">
+        <aside class="side${owner ? ' owner' : ''}">
           ${sideHTML()}
           ${owner ? `<div class="panel">${controlsHTML(s)}</div>` : ''}
         </aside>

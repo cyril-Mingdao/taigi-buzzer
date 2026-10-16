@@ -291,3 +291,71 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .who .pick.none { background: transparent; border: 1px dashed #666; color: var(--muted); font-weight: 600; font-size: .8em; }
 .live-list li.offline .who .nm { opacity: .45; }
 .live-list li.offline .who { opacity: 1; }
+
+/* ── v13 電腦橫式投影／教師畫面：整頁固定在視窗內不溢出；內容依視窗高度縮放，
+      真的放不下時只在該區塊內捲動 ── */
+.stage-body { display: grid; gap: 16px; }
+.live-toggle { margin-left: auto; }
+.tabs { display: flex; gap: 8px; align-items: center; }
+.live-chips .live-head { font-size: 1.2rem; }
+.lchips { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5em, 1fr)); gap: 6px; align-content: start; }
+.lchip { display: flex; align-items: center; justify-content: space-between; gap: 6px; background: var(--black); border: 2px solid #444; border-radius: 10px; padding: 4px 6px 4px 10px; font-weight: 700; min-width: 0; }
+.lchip .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lchip b { flex-shrink: 0; min-width: 1.9em; text-align: center; border-radius: 7px; padding: 0 6px; background: var(--yellow); color: var(--black); font-size: 1.15em; }
+.lchip.right b { background: var(--green); color: var(--white); }
+.lchip.wrong b { background: var(--red); color: var(--white); }
+.lchip.waiting { border-style: dashed; color: var(--muted); }
+.lchip.waiting b { background: transparent; color: var(--muted); }
+.lchip.offline .nm { opacity: .45; }
+
+@media (min-width: 901px) {
+  body.fit { height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+  body.fit .topbar { flex-shrink: 0; }
+  body.fit > main.wrap-page { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; padding-top: 12px; padding-bottom: 12px; }
+  body.fit .game { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(0, 1fr) clamp(260px, 24vw, 340px); }
+  body.fit .stage { min-height: 0; display: flex; flex-direction: column; }
+  body.fit .stage-head { flex-shrink: 0; flex-wrap: wrap; margin-bottom: 8px; }
+  body.fit .tabs { flex-shrink: 0; margin-bottom: 8px; }
+  body.fit .stage-body { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  body.fit .stage-body.split { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+  body.fit .stage-main, body.fit .stage-live { min-height: 0; overflow: auto; }
+  body.fit .stage-live { display: flex; flex-direction: column; }
+  body.fit .stage-live { padding: 10px; }
+  body.fit .stage-live .live-head { flex-shrink: 0; margin-bottom: 6px; }
+  body.fit .stage-live .lchips { flex: 1; overflow: auto; min-height: 0; grid-template-columns: repeat(auto-fill, minmax(7.6em, 1fr)); gap: 4px; font-size: clamp(.8rem, 2.2dvh, 1rem); }
+  body.fit .stage-live .lchip { padding: 2px 4px 2px 8px; }
+
+  /* 是非／選擇：長條數量多（A–J）時依可用高度縮小，不撐出畫面 */
+  body.fit .answer-view.big { height: 100%; display: flex; flex-direction: column; }
+  body.fit .answer-view.big .answered { flex-shrink: 0; font-size: clamp(1.2rem, 4dvh, 2rem); margin-bottom: 6px; }
+  body.fit .answer-view.big .bars { flex: 1; min-height: 0; container-type: size; display: grid; grid-template-rows: repeat(var(--n, 4), minmax(0, 1fr)); gap: 0; margin-bottom: 6px; }
+  body.fit .answer-view.big .bar { min-height: 0; grid-template-columns: 2.2em 1fr 2.2em; font-size: clamp(.8rem, calc(100cqh / var(--n, 4) * .55), 2.6rem); }
+  body.fit .answer-view.big .bar .opt, body.fit .answer-view.big .bar .num { font-size: 1em; line-height: 1; }
+  body.fit .answer-view.big .bar .track { height: 72%; max-height: 54px; }
+  body.fit .answer-view.big .winners-box { flex-shrink: 1; min-height: 0; max-height: 30%; overflow: auto; }
+  body.fit .answer-view.big .winners-box h3 { margin: 4px 0; }
+
+  /* 搶答順序：人多時字縮小 */
+  body.fit .order.big li { font-size: clamp(1rem, 3.2dvh, 1.6rem); padding: 8px 14px; }
+  body.fit .order.big li.first { font-size: clamp(1.4rem, 5dvh, 2.6rem); padding: 10px 18px; }
+
+  /* 右欄：QR 依剩餘高度縮小；教師控制面板放不下時在面板內捲動 */
+  body.fit .side { min-height: 0; display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+  body.fit .side .qrbox { flex-shrink: 0; width: min(100%, 34dvh); padding: 8px; align-self: center; }
+  body.fit .side .qrbox .code { font-size: clamp(1rem, 3.4dvh, 1.6rem); margin-top: 2px; }
+  body.fit .side .qrbox a.url { font-size: .75rem; word-break: break-all; }
+  body.fit .side .panel { min-height: 0; overflow: auto; padding: 10px; }
+  body.fit .side .panel .btn.big { padding: 9px 6px; font-size: 1rem; }
+  body.fit .side .panel .seg .btn { padding: 4px 8px; font-size: .85rem; }
+  body.fit .side .panel .reveal { padding: 6px; gap: 6px; margin-top: 8px; }
+  body.fit .side .panel .reveal .btn { padding: 4px 10px; }
+  /* 老師登入時右欄要放控制面板，QR 再縮小一點 */
+  body.fit .side.owner .qrbox { width: min(100%, 24dvh); }
+  body.fit .side.owner .qrbox a.url { display: none; }
+
+  /* 等待加入畫面：學生卡片多時在卡片區捲動 */
+  body.fit .lobby { flex: 1; min-height: 0; grid-template-rows: minmax(0, 1fr); }
+  body.fit .lobby > div:last-child { min-height: 0; display: flex; flex-direction: column; }
+  body.fit .lobby .cards { min-height: 0; overflow: auto; }
+  body.fit .ended-wrap { flex: 1; min-height: 0; overflow: auto; width: 100%; }
+}

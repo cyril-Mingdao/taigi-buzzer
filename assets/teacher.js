@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=12';
+} from './core.js?v=13';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -357,12 +357,12 @@ export function answerHTML(s, { big = false } = {}) {
   const pts = revealed ? choicePoints(s.answers, m.answer) : {};
   const winners = Object.keys(pts).filter((uid) => s.players[uid])
     .sort((a, b) => pts[b] - pts[a] || s.answers[a].at - s.answers[b].at);
-  return `<div class="answer-view${big ? ' big' : ''} ${opts.length > 5 ? 'many' : ''}">
+  return `<div class="answer-view${big ? ' big' : ''} ${opts.length > 5 ? 'many' : ''}" style="--n:${opts.length}">
     <div class="answered">已作答 <b>${n}</b> / ${total}${revealed ? `　標準答案 <b>${optionText(m.answer)}</b>` : ''}</div>
     <div class="bars">${bars}</div>
-    ${revealed ? `<h3>答對（${winners.length}）</h3>
+    ${revealed ? `<div class="winners-box"><h3>答對（${winners.length}）</h3>
       <div class="winners">${winners.map((uid) => `<span class="chip">${unitHTML(s.players[uid], m)}<b>+${pts[uid]}</b></span>`).join('')
-        || '<span class="muted">沒有人答對</span>'}</div>` : ''}
+        || '<span class="muted">沒有人答對</span>'}</div></div>` : ''}
   </div>`;
 }
 
@@ -400,6 +400,30 @@ export function liveAnswersHTML(s) {
     <div class="dist">${dist}</div>
     <ol class="live-list">${doneRows}${waitRows || ''}</ol>
     ${players.length ? '' : '<p class="muted center">還沒有已核准的學生</p>'}
+  </div>`;
+}
+
+/** 電腦教師模式（只在老師登入的投影頁顯示）：每位學生的答案小卡，例：王曉明 A。
+    依交卷先後排列，未作答的排在後面；公布答案後標出對錯。 */
+export function liveChipsHTML(s) {
+  const m = s.meta;
+  const players = Object.entries(s.players).filter(([, p]) => p.approved);
+  const done = players.filter(([uid]) => s.answers[uid])
+    .sort((a, b) => s.answers[a[0]].at - s.answers[b[0]].at);
+  const wait = players.filter(([uid]) => !s.answers[uid])
+    .sort((a, b) => playerLabel(a[1]).localeCompare(playerLabel(b[1]), 'zh-Hant'));
+  const off = (uid) => (s.presence[uid] ? '' : ' offline');
+  const chip = ([uid, p]) => {
+    const a = s.answers[uid];
+    const mark = !a ? ' waiting' : !m.answer ? '' : a.c === m.answer ? ' right' : ' wrong';
+    // 卡片只放姓名（班級前綴會把名字擠掉），完整標籤放在滑鼠提示
+    return `<span class="lchip${mark}${off(uid)}" title="${esc(playerLabel(p))}"><span class="nm">${esc(p.name || playerLabel(p))}</span>`
+      + `<b>${a ? optionText(a.c) : '—'}</b></span>`;
+  };
+  return `<div class="live-chips">
+    <div class="live-head">學生作答 <b>${done.length}</b> / ${players.length}
+      ${players.length && !wait.length ? '<span class="ok-all">全員作答</span>' : ''}</div>
+    <div class="lchips">${[...done, ...wait].map(chip).join('') || '<span class="muted">還沒有已核准的學生</span>'}</div>
   </div>`;
 }
 
@@ -453,7 +477,7 @@ export function controlsHTML(s) {
         ${btn('resume', '↩ 繼續活動', 'big')}
         ${btn('clear', '✕ 關閉房間', 'big danger')}
       </div>
-      <p class="note">「儲存成績」存成「民國日期＋班級名稱」的 CSV 到雲端硬碟，成功後自動關閉房間；「關閉房間」不存檔直接刪除本房間資料。</p>`;
+      <p class="note">「儲存成績」存成「民國日期＋班級名稱＋_教師名」的 CSV 到雲端硬碟，成功後自動關閉房間；「關閉房間」不存檔直接刪除本房間資料。</p>`;
   }
   const choice = isChoice(m);
   const seg = Object.entries(QTYPES).map(([v, t]) => btn('qtype', t, m.qtype === v ? 'on' : '', false, `data-v="${v}"`)).join('');
@@ -583,7 +607,7 @@ const stamp = (d = new Date()) => {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 };
 
-/** 產生成績 CSV：一個房間一個檔，檔名＝民國日期＋班級名稱（例如 1151014KJ21.csv）。
+/** 產生成績 CSV：一個房間一個檔，檔名＝民國日期＋班級名稱＋_教師名（例如 1151016KM21_詹宗龍.csv）。
     答對題數＝是非／選擇題答對＋搶答被判 ✓；作答次數＝作答＋搶答次數。 */
 export function buildScoreFiles(s, when = new Date()) {
   const raw = s.raw || {};
@@ -609,12 +633,14 @@ export function buildScoreFiles(s, when = new Date()) {
     return [rank, p.cls || OTHER_CLASS, p.name, p.group ? groupLabel(p.group) : '', p.score || 0, correct[p.uid] || 0, tried[p.uid] || 0];
   });
   const className = cleanClassName(s.meta.className) || '未命名班級';
+  // 教師名取建房帳號的 Google 顯示名稱；沒有顯示名稱時用信箱 @ 前面那段
+  const teacher = cleanClassName(String(s.meta.ownerName || '').split('@')[0]) || '老師';
   const csv = [
     ['台語課堂搶答成績', `班級 ${className}`, `房間 ${s.rid}`, `題數 ${s.meta.round}`, when.toLocaleString('zh-TW', { hour12: false })],
     ['名次', '學生班級', '姓名', '組別', '總分', '答對題數', '作答次數'],
     ...rows,
   ].map((r) => r.map(csvCell).join(',')).join('\r\n');
-  return [{ name: `${rocDate(when)}${className}.csv`, csv }];
+  return [{ name: `${rocDate(when)}${className}_${teacher}.csv`, csv }];
 }
 
 async function saveScores(fb, rid, getState) {

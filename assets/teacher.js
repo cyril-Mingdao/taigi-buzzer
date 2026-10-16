@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=11';
+} from './core.js?v=12';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -388,13 +388,12 @@ export function liveAnswersHTML(s) {
     const dt = typeof m.openAt === 'number' ? `${Math.max(0, (a.at - m.openAt) / 1000).toFixed(1)}s` : '';
     const mark = !revealed ? '' : a.c === m.answer ? 'right' : 'wrong';
     return `<li class="${mark}${off(uid)}"><span class="rank">${i + 1}</span>
-      <span class="who">${unitHTML(p, m)}</span>
+      <span class="who"><span class="nm">${esc(playerLabel(p))}</span><span class="pick">${optionText(a.c)}</span>${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span>
       <span class="dt">${dt}</span>
-      <span class="pick">${optionText(a.c)}</span>
       <span class="gain">${revealed ? (pts[uid] ? `+${pts[uid]}` : '✘') : ''}</span></li>`;
   }).join('');
   const waitRows = wait.map(([uid, p]) => `<li class="waiting${off(uid)}"><span class="rank">–</span>
-    <span class="who">${unitHTML(p, m)}</span><span class="pick">…</span></li>`).join('');
+    <span class="who"><span class="nm">${esc(playerLabel(p))}</span><span class="pick none">未作答</span>${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span></li>`).join('');
   return `<div class="live-ans">
     <div class="live-head">已作答 <b>${done.length}</b> / ${players.length}
       ${wait.length ? `<span class="muted">（未作答 ${wait.length}）</span>` : '<span class="ok-all">全員作答</span>'}</div>
@@ -479,9 +478,18 @@ export function playersHTML(s) {
   const entries = Object.entries(s.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
   const pending = entries.filter(([, p]) => !p.approved);
   const ok = entries.filter(([, p]) => p.approved);
+  // 是非／選擇題作答中或已鎖定：名字後面直接顯示本題選的答案（只有老師手機看得到）
+  const showPick = isChoice(s.meta) && s.meta.state !== 'idle' && s.meta.phase !== 'ended';
+  const pickTag = (uid) => {
+    if (!showPick) return '';
+    const a = s.answers[uid];
+    if (!a) return '<span class="pick none">未作答</span>';
+    const mark = !s.meta.answer ? '' : a.c === s.meta.answer ? ' right' : ' wrong';
+    return `<span class="pick${mark}">${optionText(a.c)}</span>`;
+  };
   const row = ([uid, p]) => `
     <li class="${s.presence[uid] ? '' : 'offline'}">
-      <span class="who">${esc(playerLabel(p))}${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span>
+      <span class="who">${esc(playerLabel(p))}${pickTag(uid)}${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span>
       <span class="acts">
         ${p.approved
           ? `<button class="btn sm" data-act="score" data-uid="${uid}" data-v="-1">−</button><b class="pts">${p.score || 0}</b><button class="btn sm" data-act="score" data-uid="${uid}" data-v="1">＋</button>`

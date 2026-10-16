@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=15';
+} from './core.js?v=16';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -424,6 +424,20 @@ export function liveChipsHTML(s) {
     <div class="live-head">學生作答 <b>${done.length}</b> / ${players.length}
       ${players.length && !wait.length ? '<span class="ok-all">全員作答</span>' : ''}</div>
     <div class="lchips">${[...done, ...wait].map(chip).join('') || '<span class="muted">還沒有已核准的學生</span>'}</div>
+  </div>`;
+}
+
+/** 本題畫面頂端：還沒核准的學生（中途加入的人常被漏掉，學生手機會一直停在「等待核准」）。 */
+export function pendingBarHTML(s) {
+  const pend = Object.entries(s.players).filter(([, p]) => !p.approved)
+    .sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+  if (!pend.length) return '';
+  return `<div class="pend-bar" role="alert">
+    <div class="pend-head"><b>⚠ ${pend.length} 人等待核准</b>，核准後才能作答
+      ${pend.length > 1 ? '<button class="btn sm btn-yellow" data-act="approveAll">全部核准</button>' : ''}</div>
+    <div class="pend-list">${pend.map(([uid, p]) => `<span class="pend-item">${esc(playerLabel(p))}
+      <button class="btn sm btn-yellow" data-act="approve" data-uid="${uid}">核准</button>
+      <button class="btn sm danger" data-act="kick" data-uid="${uid}">移除</button></span>`).join('')}</div>
   </div>`;
 }
 

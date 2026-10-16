@@ -407,3 +407,11 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .pcard:not(.pending) .pc-acts { display: none; }
 .pcard:not(.pending):hover .pc-acts, .pcard:not(.pending):focus-within .pc-acts { display: flex; position: absolute; left: 6px; right: 6px; bottom: 4px; justify-content: center; background: var(--white); }
 .pcard.offline:hover { opacity: 1; }
+
+/* ── v16 本題畫面的「等待核准」提示（中途加入的學生不再被漏掉） ── */
+.pend-bar { border: 2px solid var(--yellow); background: #2a2400; border-radius: 12px; padding: 8px 10px; margin-bottom: 10px; display: grid; gap: 6px; }
+.pend-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--yellow); }
+.pend-head .btn { margin-left: auto; }
+.pend-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.pend-item { display: inline-flex; align-items: center; gap: 4px; background: var(--black); border-radius: 999px; padding: 2px 4px 2px 10px; font-weight: 700; }
+.stage-live .pend-bar { margin: 8px 0 0; flex-shrink: 0; max-height: 40%; overflow: auto; }

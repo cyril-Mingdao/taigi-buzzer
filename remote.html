@@ -13,7 +13,7 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・遙控</title>
-<link rel="stylesheet" href="assets/app.css?v=15">
+<link rel="stylesheet" href="assets/app.css?v=16">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   .remote { display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
@@ -26,7 +26,7 @@
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v15">遙控</span>
+  <span class="title" title="v16">遙控</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <span class="spacer"></span>
   <span class="who" id="who"></span>
@@ -34,11 +34,11 @@
 <main class="wrap-page" id="main"><p class="muted center">載入中…</p></main>
 
 <script type="module">
-import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js?v=15';
+import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js?v=16';
 import {
   teacherBoot, mountAccountMenu, watchRoom, makeActions, runJobs, remainingSec, patch,
-  orderHTML, liveAnswersHTML, notBuzzedHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=15';
+  orderHTML, liveAnswersHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
+} from './assets/teacher.js?v=16';
 
 const base = new URL('./', location.href).href;
 const joinUrl = (id) => `${base}join.html?room=${id}`;
@@ -133,8 +133,8 @@ async function start({ fb, user }) {
     else if (tab === 'b') html = `${boardHTML(s)}`;
     else if (tab === 's') html = `<div class="settings">${settingsHTML(s)}</div>`;
     else if (m.phase === 'ended') html = podiumHTML(s);
-    else if (isChoice(m)) html = m.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : liveAnswersHTML(s);
-    else html = orderHTML(s) + notBuzzedHTML(s);
+    else if (isChoice(m)) html = pendingBarHTML(s) + (m.state === 'idle' ? '<p class="muted center">按「開始作答」後學生即可在手機上選答案</p>' : liveAnswersHTML(s));
+    else html = pendingBarHTML(s) + orderHTML(s) + notBuzzedHTML(s);
     patch($('#body'), html);
   }
 }

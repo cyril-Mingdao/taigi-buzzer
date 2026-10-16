@@ -13,12 +13,12 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=15">
+<link rel="stylesheet" href="assets/app.css?v=16">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v15">課堂搶答</span>
+  <span class="title" title="v16">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
@@ -35,12 +35,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=15';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=16';
 import {
   bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
-  patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=15';
-import { sound } from './assets/sound.js?v=15';
+  patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
+} from './assets/teacher.js?v=16';
+import { sound } from './assets/sound.js?v=16';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -324,7 +324,7 @@ function enterRoom(fb, rid, { owner }) {
       : choice ? liveChipsHTML(s) : (notBuzzedHTML(s) || '<p class="muted center">所有學生都按過了</p>');
     const liveCol = liveOn ? `<section class="stage-live panel">
         <button class="btn sm live-hide" data-live-toggle title="投影給學生看時可先隱藏">🙈 隱藏</button>
-        ${liveBody}</section>` : '';
+        ${liveBody}${pendingBarHTML(s)}</section>` : '';
     const liveBtn = owner && tab === 'live' && !showLive
       ? '<button class="btn sm live-toggle" data-live-toggle>👁 顯示學生答案</button>' : '';
 

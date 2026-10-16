@@ -9,7 +9,7 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=13';
+} from './core.js?v=14';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 

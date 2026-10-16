@@ -13,12 +13,12 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=13">
+<link rel="stylesheet" href="assets/app.css?v=14">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v13">課堂搶答</span>
+  <span class="title" title="v14">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
@@ -35,12 +35,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=13';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=14';
 import {
   bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=13';
-import { sound } from './assets/sound.js?v=13';
+} from './assets/teacher.js?v=14';
+import { sound } from './assets/sound.js?v=14';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -199,9 +199,10 @@ function enterRoom(fb, rid, { owner }) {
 
   let s = null;
   let tab = 'live';            // live：本題畫面｜board：排行榜
-  // 教師模式的「學生答案」面板（王曉明 A）；要投影給學生看時可隱藏，記在這台電腦
+  // 教師模式的「學生答案」面板（王曉明 A）：預設顯示；要投影給學生看時可暫時隱藏（重新整理後恢復顯示）
   let showLive = true;
-  try { showLive = localStorage.getItem('buzz.showLive') !== '0'; } catch {}
+  // 進行中畫面右欄的 QR code：預設收合，把空間讓給控制區
+  let qrOpen = false;
   const prev = { players: 0, state: null, round: null, first: null, cd: null, phase: null };
   const act = owner ? makeActions(fb, rid, () => s) : null;
   if (owner) {
@@ -211,11 +212,8 @@ function enterRoom(fb, rid, { owner }) {
   main.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
     if (t) { tab = t.dataset.tab; render(); }
-    if (e.target.closest('[data-live-toggle]')) {
-      showLive = !showLive;
-      try { localStorage.setItem('buzz.showLive', showLive ? '1' : '0'); } catch {}
-      render();
-    }
+    if (e.target.closest('[data-live-toggle]')) { showLive = !showLive; render(); }
+    if (e.target.closest('[data-qr-toggle]')) { qrOpen = !qrOpen; render(); }
     const c = e.target.closest('.pcard.pending');
     if (c && owner) act.approve(c.dataset.uid);
   });
@@ -259,8 +257,13 @@ function enterRoom(fb, rid, { owner }) {
   }
 
   function sideHTML() {
-    return `<div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div><div class="code">${rid}</div>
+    const box = `<div class="qrbox"><div class="qr">${qrImg(joinUrl(rid))}</div><div class="code">${rid}</div>
       <a class="url" href="${esc(joinUrl(rid))}" target="_blank" rel="noopener">${esc(joinUrl(rid))}</a></div>`;
+    if (!owner) return box;
+    // 教師模式：QR 放在控制區下方、可收合（預設收合）
+    return `<div class="qr-fold${qrOpen ? ' open' : ''}">
+      <button class="btn sm qr-toggle" data-qr-toggle>${qrOpen ? '▾ 收合 QR code' : `▸ 加入 QR code（${rid}）`}</button>
+      ${qrOpen ? box : ''}</div>`;
   }
 
   function render() {
@@ -287,7 +290,7 @@ function enterRoom(fb, rid, { owner }) {
             <div class="row between wrap">
               <div class="count-big">${m.className ? `<span class="cls-tag">${esc(m.className)}</span>` : ''}已加入 <b>${ok}</b> 人${pend ? `　待核准 <b>${pend}</b>` : ''}</div>
               ${owner ? `<div class="row">
-                ${pend ? '<button class="btn" data-act="approveAll">全部核准</button>' : ''}
+                <button class="btn" data-act="approveAll" ${pend ? '' : 'disabled'}>全部核准${pend ? `（${pend}）` : ''}</button>
                 <button class="btn btn-yellow" data-act="game">進入搶答 ▶</button>
               </div>` : `<span class="badge st-idle">${esc(m.ownerName || '老師')}・等待開始</span>`}
             </div>
@@ -305,14 +308,18 @@ function enterRoom(fb, rid, { owner }) {
     if (tab === 'board') stage = boardHTML(s);
     else if (choice) stage = m.state === 'idle' ? '<div class="bigmsg">準備作答…</div>' : answerHTML(s, { big: true });
     else stage = m.state === 'idle' ? '<div class="bigmsg">準備搶答…</div>' : orderHTML(s, { big: true, judging: owner });
-    // 教師模式：本題進行中時，旁邊加「學生答案」面板（是非／選擇＝王曉明 A；搶答＝還沒按的人）
-    const live = owner && tab === 'live' && m.state !== 'idle' && showLive
-      ? (choice ? liveChipsHTML(s) : notBuzzedHTML(s)) : '';
-    const liveBtn = owner && tab === 'live'
-      ? `<button class="btn sm live-toggle" data-live-toggle>${showLive ? '🙈 隱藏學生答案' : '👁 顯示學生答案'}</button>` : '';
+    // 教師模式：中間一整欄「學生答案」（是非／選擇＝王曉明 A；搶答＝還沒按的人），從頂端拉到底
+    const liveOn = owner && tab === 'live' && showLive;
+    const liveBody = m.state === 'idle' ? '<p class="muted center">按「開始作答／搶答」後這裡會即時顯示每位學生的答案</p>'
+      : choice ? liveChipsHTML(s) : (notBuzzedHTML(s) || '<p class="muted center">所有學生都按過了</p>');
+    const liveCol = liveOn ? `<section class="stage-live panel">
+        <button class="btn sm live-hide" data-live-toggle title="投影給學生看時可先隱藏">🙈 隱藏</button>
+        ${liveBody}</section>` : '';
+    const liveBtn = owner && tab === 'live' && !showLive
+      ? '<button class="btn sm live-toggle" data-live-toggle>👁 顯示學生答案</button>' : '';
 
     patch(main, `
-      <div class="game">
+      <div class="game${liveOn ? ' with-live' : ''}">
         <section class="stage">
           <div class="stage-head">
             ${m.className ? `<span class="cls-tag">${esc(m.className)}</span>` : ''}
@@ -326,14 +333,14 @@ function enterRoom(fb, rid, { owner }) {
             <button class="btn sm ${tab === 'board' ? 'on' : ''}" data-tab="board">排行榜</button>
             ${liveBtn}
           </div>
-          <div class="stage-body${live ? ' split' : ''}">
+          <div class="stage-body">
             <div class="stage-main">${stage}</div>
-            ${live ? `<div class="stage-live panel">${live}</div>` : ''}
           </div>
         </section>
+        ${liveCol}
         <aside class="side${owner ? ' owner' : ''}">
+          ${owner ? `<div class="panel ctl-panel">${controlsHTML(s)}</div>` : ''}
           ${sideHTML()}
-          ${owner ? `<div class="panel">${controlsHTML(s)}</div>` : ''}
         </aside>
       </div>`);
   }

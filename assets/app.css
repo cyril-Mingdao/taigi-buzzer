@@ -359,3 +359,39 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
   body.fit .lobby .cards { min-height: 0; overflow: auto; }
   body.fit .ended-wrap { flex: 1; min-height: 0; overflow: auto; width: 100%; }
 }
+
+/* ── v14 教師電腦畫面：［題目／長條］［學生答案（整欄到頂）］［控制區＋可收合 QR］ ── */
+.qr-fold { display: grid; gap: 8px; }
+.qr-toggle { width: 100%; }
+.stage-live { position: relative; }
+.live-hide { position: absolute; top: 10px; right: 10px; }
+.stage-live .live-head { padding-right: 5.5em; }
+/* 控制區：按鈕排成固定格線，不用捲動就能按到全部 */
+.ctl-panel .seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ctl-panel .seg .btn { width: 100%; padding: 6px 2px; white-space: nowrap; }
+.ctl-panel .ctl-main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.ctl-panel .ctl-main .btn.big { width: 100%; min-width: 0; padding: 10px 2px; }
+.ctl-panel .reveal { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.ctl-panel .reveal > span { grid-column: 1 / -1; }
+.ctl-panel .reveal .btn { width: 100%; min-width: 0; padding: 6px 0; }
+.ctl-panel .end-row { margin-top: 8px; }
+
+@media (min-width: 901px) {
+  body.fit .game.with-live { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) clamp(270px, 21vw, 340px); gap: 14px; }
+  body.fit .game > .stage-live { min-height: 0; display: flex; flex-direction: column; overflow: hidden; padding: 10px 12px; }
+  body.fit .game > .stage-live .live-chips { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  body.fit .game > .stage-live .lchips { flex: 1; min-height: 0; overflow: auto; grid-template-columns: repeat(auto-fill, minmax(7.6em, 1fr)); gap: 4px; font-size: clamp(.8rem, 2.2dvh, 1rem); }
+  body.fit .side.owner { overflow-y: auto; overflow-x: hidden; }
+  body.fit .side .ctl-panel { flex-shrink: 0; overflow: visible; font-size: clamp(.78rem, 1.9dvh, 1rem); }
+  body.fit .ctl-panel .ctl-status { font-size: 1.05em; margin-bottom: 6px; }
+  body.fit .ctl-panel .seg { margin-bottom: 6px; }
+  body.fit .ctl-panel .seg .btn { font-size: .85em; padding: clamp(2px, .6dvh, 6px) 2px; }
+  body.fit .ctl-panel .ctl-main .btn.big { font-size: 1em; padding: clamp(4px, 1.1dvh, 10px) 2px; }
+  body.fit .ctl-panel .reveal { padding: 6px; margin-top: 6px; gap: 4px; }
+  body.fit .ctl-panel .reveal > span { font-size: .85em; }
+  body.fit .ctl-panel .reveal .btn { font-size: .95em; padding: clamp(1px, .5dvh, 5px) 0; }
+  body.fit .ctl-panel .end-row { margin-top: 6px; }
+  body.fit .ctl-panel .end-row .btn { font-size: .9em; padding: 4px 10px; }
+  body.fit .side.owner .qr-fold .qrbox { width: min(100%, 30dvh); justify-self: center; }
+  body.fit .side.owner .qr-fold .qrbox a.url { display: inline-block; }
+}

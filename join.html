@@ -13,7 +13,7 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答</title>
-<link rel="stylesheet" href="assets/app.css?v=16">
+<link rel="stylesheet" href="assets/app.css?v=17">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -22,9 +22,9 @@
 import {
   loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
-  optionList, optionText, isChoice, choicePoints, leaderboard, CORRECT_PTS,
-} from './assets/core.js?v=16';
-import { sound } from './assets/sound.js?v=16';
+  optionList, optionText, isChoice, isMulti, choicePoints, leaderboard, CORRECT_PTS,
+} from './assets/core.js?v=17';
+import { sound } from './assets/sound.js?v=17';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -273,38 +273,56 @@ async function boot() {
     }
   }
 
+  // 複選題：學生正在勾選、還沒送出的選項（每題一份）
+  const picks = new Map();
+  const myPicks = (round) => { if (!picks.has(round)) picks.set(round, new Set()); return picks.get(round); };
+
   function renderAnswer() {
     const m = s.meta;
     const opts = optionList(m);
+    const multi = isMulti(m);
     const mine = s.answer ? s.answer.c : (pending && pending.startsWith(`ans${m.round}:`) ? pending.split(':')[1] : null);
     const canPick = m.state === 'open' && !mine;
+    const sel = myPicks(m.round);
     let status;
     const got = m.answer ? (choicePoints(s.roundAnswers, m.answer)[uid] || 0) : 0;
     if (m.answer) status = !mine ? `答案是 ${optionText(m.answer)}，你沒有作答` : mine === m.answer ? `🎉 答對了！+${got}` : `答錯了，答案是 ${optionText(m.answer)}`;
-    else if (mine) status = '已送出，等老師公布答案';
-    else if (m.state === 'open') status = '請選答案（只能選一次）';
+    else if (mine) status = multi ? `已送出 ${esc(mine)}，等老師公布答案` : '已送出，等老師公布答案';
+    else if (m.state === 'open') status = multi ? '複選：點選所有你認為對的答案，再按「送出」' : '請選答案（只能選一次）';
     else if (m.state === 'locked') status = '時間到';
-    else status = `第 ${esc(m.round)} 題・等老師說開始…`;
+    else status = `第 ${esc(m.round)} 題・等老師說開始…${multi ? '（複選）' : ''}`;
+    const inMine = (o) => !!mine && String(mine).includes(o);
+    const inKey = (o) => !!m.answer && String(m.answer).includes(o);
     const html = `${header()}<div class="status">${status}</div>
       <div class="opts ${opts.length > 5 ? 'many' : ''}">${opts.map((o) => {
         let c = '';
-        if (m.answer && o === m.answer) c = 'correct';
-        else if (m.answer && o === mine) c = 'wrong';
-        else if (o === mine) c = 'picked';
+        if (m.answer && inKey(o)) c = 'correct';
+        else if (m.answer && inMine(o)) c = 'wrong';
+        else if (inMine(o) || (canPick && multi && sel.has(o))) c = 'picked';
         return `<button class="btn ${c}" data-o="${o}" ${canPick ? '' : 'disabled'}>${optionText(o)}</button>`;
-      }).join('')}</div>`;
+      }).join('')}</div>
+      ${multi && canPick ? `<button class="btn btn-yellow big send-multi" id="sendMulti" ${sel.size ? '' : 'disabled'}>送出${sel.size ? `（${[...sel].sort().join('')}）` : ''}</button>` : ''}`;
     if (main._html === html) return;
     main._html = html; main.innerHTML = html;
+    const send = async (c) => {
+      pending = `ans${m.round}:${c}`;
+      sound.buzz(); navigator.vibrate && navigator.vibrate(40);
+      render();
+      try { await fb.set(r(`/answers/${m.round}/${uid}`), { c, at: fb.serverTimestamp() }); }
+      catch { pending = null; toast('送出失敗（可能已鎖定）'); render(); }
+    };
     main.querySelectorAll('[data-o]').forEach((b) => {
-      b.onclick = async () => {
+      b.onclick = () => {
         if (!canPick) return;
-        pending = `ans${m.round}:${b.dataset.o}`;
-        sound.buzz(); navigator.vibrate && navigator.vibrate(40);
+        if (!multi) return send(b.dataset.o);
+        // 複選：點一下選、再點一下取消
+        if (sel.has(b.dataset.o)) sel.delete(b.dataset.o); else sel.add(b.dataset.o);
+        navigator.vibrate && navigator.vibrate(15);
         render();
-        try { await fb.set(r(`/answers/${m.round}/${uid}`), { c: b.dataset.o, at: fb.serverTimestamp() }); }
-        catch { pending = null; toast('送出失敗（可能已鎖定）'); render(); }
       };
     });
+    const sm = $('#sendMulti');
+    if (sm) sm.onclick = () => { if (sel.size) send([...sel].sort().join('')); };
   }
 
 }

@@ -11,7 +11,7 @@
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '16';
+export const APP_VERSION = '17';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -53,6 +53,10 @@ export const DEFAULT_META = {
 };
 export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: '選擇 A–D', af: '選擇 A–F', aj: '選擇 A–J' };
 export const isChoice = (m) => m.qtype !== 'buzz';
+/** 複選：選擇題（是非題除外）且 meta.multi 為 true。答案存成排序後的字母串，例如 "AC"；全對才給分。 */
+export const isMulti = (m) => !!m.multi && isChoice(m) && m.qtype !== 'tf';
+/** 題型標籤：選擇題後面標「單選／複選」。 */
+export const qtypeLabel = (m) => `${QTYPES[m.qtype] || ''}${isChoice(m) && m.qtype !== 'tf' ? (isMulti(m) ? '・複選' : '・單選') : ''}`;
 /** 各題型的選項；舊版 qtype 'answer' 依 options 欄位相容。 */
 export function optionList(m) {
   if (m.qtype === 'tf') return ['O', 'X'];
@@ -105,7 +109,7 @@ export async function loadFirebase({ appName } = {}) {
   } catch {}
   let cfg;
   try {
-    cfg = await import('../config/firebase-config.js?v=16');
+    cfg = await import('../config/firebase-config.js?v=17');
   } catch {
     throw Object.assign(new Error('NO_CONFIG'), { code: 'NO_CONFIG' });
   }

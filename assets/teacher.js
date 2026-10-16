@@ -8,8 +8,8 @@ import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
-  CORRECT_PTS, choicePoints, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=16';
+  CORRECT_PTS, choicePoints, isMulti, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
+} from './core.js?v=17';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -173,6 +173,7 @@ export function makeActions(fb, rid, getState) {
     },
     resume: () => meta({ phase: 'game' }),
     save: () => saveScores(fb, rid, getState),
+    getMeta: () => getState().meta,
     setMeta: meta,
 
     /** 搶答題：老師對搶答者按 ✓／✗。再按一次同一顆＝取消，分數一併還原。答對自動鎖定。 */
@@ -216,6 +217,18 @@ export function makeActions(fb, rid, getState) {
       }))) return;
       return meta(s.meta.state === 'idle' ? { qtype }
         : { qtype, state: 'idle', round: String((parseInt(s.meta.round, 10) || 0) + 1), openAt: null, answer: null });
+    },
+
+    /** 單選／複選切換（預設單選＝不寫 multi 欄位）。本題進行中切換會直接進入下一題。 */
+    async setMulti(on) {
+      const s = getState();
+      if (!!s.meta.multi === on) return;
+      if (s.meta.state !== 'idle' && !(await ask({
+        title: on ? '改成複選' : '改成單選', message: '本題進行中，切換會直接進入下一題。', ok: '切換並進入下一題',
+      }))) return;
+      const v = on ? true : null;
+      return meta(s.meta.state === 'idle' ? { multi: v }
+        : { multi: v, state: 'idle', round: String((parseInt(s.meta.round, 10) || 0) + 1), openAt: null, answer: null });
     },
 
     approve(uid) {
@@ -295,6 +308,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
+export { qtypeLabel } from './core.js?v=17';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -344,12 +358,13 @@ export function answerHTML(s, { big = false } = {}) {
   const list = Object.entries(s.answers).filter(([uid]) => s.players[uid]);
   const n = list.length;
   const counts = Object.fromEntries(opts.map((o) => [o, 0]));
-  for (const [, a] of list) if (a.c in counts) counts[a.c]++;
+  for (const [, a] of list) for (const ch of String(a.c || '')) if (ch in counts) counts[ch]++;
   const revealed = !!m.answer;
+  const isKey = (o) => revealed && String(m.answer).includes(o);
   const bars = opts.map((o) => {
     const c = counts[o];
     const pct = n ? Math.round((c / n) * 100) : 0;
-    return `<div class="bar ${revealed && o === m.answer ? 'correct' : ''} ${revealed && o !== m.answer ? 'dim' : ''}">
+    return `<div class="bar ${isKey(o) ? 'correct' : ''} ${revealed && !isKey(o) ? 'dim' : ''}">
       <span class="opt">${optionText(o)}</span>
       <span class="track"><span style="width:${revealed ? pct : 0}%"></span></span>
       <span class="num">${revealed ? c : ''}</span></div>`;
@@ -377,10 +392,10 @@ export function liveAnswersHTML(s) {
   const wait = players.filter(([uid]) => !s.answers[uid])
     .sort((a, b) => playerLabel(a[1]).localeCompare(playerLabel(b[1]), 'zh-Hant'));
   const counts = Object.fromEntries(opts.map((o) => [o, 0]));
-  for (const [uid] of done) if (s.answers[uid].c in counts) counts[s.answers[uid].c]++;
+  for (const [uid] of done) for (const ch of String(s.answers[uid].c || '')) if (ch in counts) counts[ch]++;
   const revealed = !!m.answer;
   const pts = revealed ? choicePoints(s.answers, m.answer) : {};
-  const dist = opts.map((o) => `<span class="dist-item ${revealed && o === m.answer ? 'correct' : ''}">
+  const dist = opts.map((o) => `<span class="dist-item ${revealed && String(m.answer).includes(o) ? 'correct' : ''}">
     <b>${optionText(o)}</b>${counts[o]}</span>`).join('');
   const off = (uid) => (s.presence[uid] ? '' : ' offline');
   const doneRows = done.map(([uid, p], i) => {
@@ -495,14 +510,26 @@ export function controlsHTML(s) {
   }
   const choice = isChoice(m);
   const seg = Object.entries(QTYPES).map(([v, t]) => btn('qtype', t, m.qtype === v ? 'on' : '', false, `data-v="${v}"`)).join('');
-  const reveal = choice && m.state !== 'idle'
-    ? `<div class="reveal"><span>${m.answer ? '標準答案（點別的可更正）' : '選擇標準答案：'}</span>
-        ${optionList(m).map((o) => btn('reveal', optionText(o), m.answer === o ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}</div>`
+  const multi = isMulti(m);
+  const modeSeg = choice && m.qtype !== 'tf'
+    ? `<div class="seg mode-seg">${btn('multi', '單選', multi ? '' : 'on', false, 'data-v="0"')}${btn('multi', '複選', multi ? 'on' : '', false, 'data-v="1"')}</div>`
     : '';
+  let reveal = '';
+  if (choice && m.state !== 'idle' && !multi) {
+    reveal = `<div class="reveal"><span>${m.answer ? '標準答案（點別的可更正）' : '選擇標準答案：'}</span>
+        ${optionList(m).map((o) => btn('reveal', optionText(o), m.answer === o ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}</div>`;
+  } else if (choice && m.state !== 'idle') {
+    // 複選：先點選所有正確選項，再按「公布答案」；公布後可改選再按一次＝更正
+    const sel = keyDraft(m);
+    reveal = `<div class="reveal multi"><span>${m.answer ? `標準答案 ${esc(m.answer)}（改選後再按公布＝更正）` : '複選：點選所有正確選項後按公布'}</span>
+        ${optionList(m).map((o) => btn('kpick', optionText(o), sel.has(o) ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}
+        ${btn('kreveal', '✔ 公布答案', 'btn-yellow kreveal', !sel.size || [...sel].sort().join('') === m.answer)}</div>`;
+  }
   return `
     <div class="ctl-status">第 <b>${esc(m.round)}</b> 題 · <span class="badge st-${m.state}">${stateText(m)}</span>
       <span class="cd" data-cd></span></div>
     <div class="seg row wrap">${seg}</div>
+    ${modeSeg}
     <div class="ctl-main">
       ${btn('open', choice ? '▶ 開始作答' : '▶ 開始搶答', 'btn-yellow big', m.state !== 'idle')}
       ${btn('lock', '■ 鎖定', 'big', m.state !== 'open')}
@@ -568,6 +595,13 @@ export function settingsHTML(s) {
     </div>`;
 }
 
+/** 複選題老師正在勾選的標準答案（每題一份，只存在這個頁面）；已公布過就從公布的答案開始。 */
+const keyDrafts = new Map();
+function keyDraft(m) {
+  if (!keyDrafts.has(m.round)) keyDrafts.set(m.round, new Set(String(m.answer || '').split('').filter(Boolean)));
+  return keyDrafts.get(m.round);
+}
+
 /** 事件委派：控制面板裡所有 data-act / data-set 元素。 */
 export function bindControls(root, act, { onCleared } = {}) {
   root.addEventListener('click', async (e) => {
@@ -578,6 +612,21 @@ export function bindControls(root, act, { onCleared } = {}) {
     if (a === 'judge') return act.judge(uid, v);
     if (a === 'reveal') return act.reveal(v);
     if (a === 'qtype') return act.setQtype(v);
+    if (a === 'multi') return act.setMulti(v === '1');
+    if (a === 'kpick' || a === 'kreveal') {
+      const panel = b.closest('.reveal');
+      const m = act.getMeta();
+      const sel = keyDraft(m);
+      if (a === 'kpick') {
+        if (sel.has(v)) sel.delete(v); else sel.add(v);
+        b.classList.toggle('btn-yellow', sel.has(v));
+        const go = panel && panel.querySelector('.kreveal');
+        if (go) go.disabled = !sel.size || [...sel].sort().join('') === m.answer;
+        return;
+      }
+      if (sel.size) return act.reveal([...sel].sort().join(''));
+      return;
+    }
     if (a === 'clear') { if (await act.clearRoom()) onCleared && onCleared(); return; }
     if (a === 'save') { if (await act.save()) onCleared && onCleared(); return; }
     if (typeof act[a] === 'function') act[a](uid);

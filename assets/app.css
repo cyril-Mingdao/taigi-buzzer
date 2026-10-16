@@ -415,3 +415,12 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .pend-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .pend-item { display: inline-flex; align-items: center; gap: 4px; background: var(--black); border-radius: 999px; padding: 2px 4px 2px 10px; font-weight: 700; }
 .stage-live .pend-bar { margin: 8px 0 0; flex-shrink: 0; max-height: 40%; overflow: auto; }
+
+/* ── v17 單選／複選 ── */
+.mode-seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.mode-seg .btn { width: 100%; }
+.mode-seg .btn.on { background: var(--yellow); color: var(--black); border-color: var(--yellow); }
+.reveal.multi .kreveal { grid-column: 1 / -1; }
+.reveal .kreveal:disabled { opacity: .4; }
+.btn.send-multi { display: block; width: 100%; flex: 0 0 auto; padding: 14px 10px; font-size: 1.3rem; }
+.btn.send-multi:disabled { opacity: .4; }

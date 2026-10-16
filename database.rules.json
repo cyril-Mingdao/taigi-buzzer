@@ -5,6 +5,7 @@
     "v06：題型 buzz（搶答）／tf（是非）／ab（選擇 A–B）／abcd（選擇 A–D）／af（選擇 A–F）／aj（選擇 A–J）；keys/{round} 存每題標準答案；phase 多了 ended。",
     "buzzLive/{rid}：公開房間清單摘要（老師名、人數、階段），任何登入者（含匿名的投影頁）可讀，只有房主可寫。",
     "v07：meta.className／buzzLive.className＝老師建房時輸入的班級名稱（成績檔名用）。",
+    "v17：meta.multi＝複選題（true）；複選答案／標準答案存成排序後的字母串，例如 AC（answers.c、meta.answer、keys 都放寬為 1～10 個 A–J 或 O／X）。",
     "貼到 Firebase Console → Realtime Database → 規則 → 發布。",
     "",
     "教師：Google 登入且信箱在下列 4 個白名單內（與 taigi-quiz 收件程式 CONFIG.TEACHERS 相同），才能建立房間。",
@@ -66,7 +67,7 @@
             ".validate": "newData.isString() && newData.val().matches(/^(buzz|tf|ab|abcd|af|aj)$/)"
           },
           "answer": {
-            ".validate": "newData.isString() && newData.val().matches(/^[A-JOX]$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X)$/)"
           },
           "wrongPts": {
             ".validate": "newData.isNumber() && newData.val() >= -10 && newData.val() <= 0"
@@ -76,6 +77,9 @@
           },
           "className": {
             ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20"
+          },
+          "multi": {
+            ".validate": "newData.isBoolean()"
           },
           "$other": {
             ".validate": false
@@ -157,7 +161,7 @@
               ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && (root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'tf' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'ab' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'abcd' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'af' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'aj') && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'open' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true",
               ".validate": "newData.hasChildren(['c', 'at'])",
               "c": {
-                ".validate": "newData.isString() && newData.val().matches(/^[A-JOX]$/)"
+                ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X)$/)"
               },
               "at": {
                 ".validate": "newData.val() === now"
@@ -179,7 +183,7 @@
         "keys": {
           ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid",
           "$round": {
-            ".validate": "newData.isString() && newData.val().matches(/^[A-JOX]$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X)$/)"
           }
         },
         "$other": {

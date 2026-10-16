@@ -13,15 +13,16 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=17">
+<link rel="stylesheet" href="assets/app.css?v=18">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v17">課堂搶答</span>
+  <span class="title" title="v18">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
+  <button class="btn sm" id="bWatch" hidden title="另開不含教師控制的公開畫面">👁 監看分頁</button>
   <button class="btn sm" id="bRemote" hidden>📱 手機遙控</button>
   <button class="btn sm" id="bDrawer" hidden>⚙ 名單／設定</button>
   <button class="btn sm" id="bSound">🔊 音效開</button>
@@ -35,12 +36,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=17';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=18';
 import {
-  bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
+  bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel,
-} from './assets/teacher.js?v=17';
-import { sound } from './assets/sound.js?v=17';
+} from './assets/teacher.js?v=18';
+import { sound } from './assets/sound.js?v=18';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -56,6 +57,10 @@ function qrImg(text) {
 const base = new URL('./', location.href).href;
 const joinUrl = (rid) => `${base}join.html?room=${rid}`;
 const remoteUrl = (rid) => `${base}remote.html?room=${rid}`;
+// ?view=public：監看畫面。老師已登入時也強制顯示公開投影（同一瀏覽器的新分頁共用登入狀態）
+const watch = new URL(location.href).searchParams.get('view') === 'public';
+const roomUrl = (rid, w = watch) => `?room=${rid}${w ? '&view=public' : ''}`;
+const listUrl = watch ? `${base}?view=public` : base;
 const isPhone = () => window.matchMedia('(max-width: 820px)').matches;
 const PHASE_TEXT = { lobby: '等待加入', game: '進行中', ended: '已結束' };
 
@@ -64,7 +69,7 @@ $('#bFull').onclick = () => (document.fullscreenElement ? document.exitFullscree
 $('#bSound').onclick = (e) => { sound.setMuted(!sound.muted); e.target.textContent = sound.muted ? '🔇 音效關' : '🔊 音效開'; };
 $('#bDrawer').onclick = () => $('#drawer').classList.toggle('open');
 $('#bClose').onclick = () => $('#drawer').classList.remove('open');
-$('#bBack').onclick = () => { location.href = base; };
+$('#bBack').onclick = () => { location.href = listUrl; };
 
 const boot = await bootFirebase(main);
 if (boot) start(boot);
@@ -72,7 +77,15 @@ if (boot) start(boot);
 /* 進入點：教師帳號 → 教師模式；未登入（或非教師）→ 公開投影模式，不用登入就能選房間觀看 */
 async function start({ fb, user }) {
   const rid = normalizeRoom(new URL(location.href).searchParams.get('room'));
+  if (watch && user) {
+    // 監看畫面：沿用目前登入讀資料，不顯示教師控制；右上角提供回教師模式
+    const back = rid ? `${base}?room=${rid}` : base;
+    $('#who').innerHTML = `<a class="btn sm btn-yellow" style="text-decoration:none" href="${esc(back)}">教師模式</a>`;
+    if (rid) return enterRoom(fb, rid, { owner: false });
+    return publicList(fb);
+  }
   if (isTeacherUser(user)) {
+    document.title = `課堂投影．${teacherName(user)}`;     // 分頁標題顯示教師姓名（Google 顯示名稱），好跟監看分頁區分
     mountAccountMenu(fb, user);
     if (rid) {
       const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
@@ -148,7 +161,7 @@ function publicList(fb, noPermUser = null) {
     off();
     main.onclick = null;
     main._html = null;
-    history.pushState(null, '', `?room=${c.dataset.rid}`);
+    history.pushState(null, '', roomUrl(c.dataset.rid));
     enterRoom(fb, c.dataset.rid, { owner: false });     // 同頁切換，點擊同時解鎖音效
   };
   window.onpopstate = () => location.reload();
@@ -180,13 +193,14 @@ async function picker(fb, user) {
 }
 
 function enterRoom(fb, rid, { owner }) {
-  history.replaceState(null, '', `?room=${rid}`);
+  history.replaceState(null, '', roomUrl(rid));
   document.body.classList.add('fit');     // 電腦橫式畫面：整頁固定在視窗內，不出現捲軸
   $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
   fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta/className`)).then((v) => { if (v.val()) $('#roomTag').textContent = `${v.val()}・${rid}`; }).catch(() => {});
   $('#bBack').hidden = owner;
   if (owner) {
-    $('#bRemote').hidden = false; $('#bDrawer').hidden = false;
+    $('#bRemote').hidden = false; $('#bDrawer').hidden = false; $('#bWatch').hidden = false;
+    $('#bWatch').onclick = () => window.open(`${base}${roomUrl(rid, true)}`, '_blank');
     $('#bRemote').onclick = () => {
       const m = document.createElement('div');
       m.className = 'modal';
@@ -223,7 +237,7 @@ function enterRoom(fb, rid, { owner }) {
     if (!next) {
       s = null;
       main._html = null;
-      main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${base}">回房間清單</a></div>`;
+      main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${listUrl}">回房間清單</a></div>`;
       return;
     }
     s = next;

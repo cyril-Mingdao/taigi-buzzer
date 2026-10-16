@@ -13,12 +13,12 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=14">
+<link rel="stylesheet" href="assets/app.css?v=15">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v14">課堂搶答</span>
+  <span class="title" title="v15">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
@@ -35,12 +35,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=14';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=15';
 import {
   bootFirebase, isTeacherUser, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive,
-} from './assets/teacher.js?v=14';
-import { sound } from './assets/sound.js?v=14';
+} from './assets/teacher.js?v=15';
+import { sound } from './assets/sound.js?v=15';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -214,8 +214,9 @@ function enterRoom(fb, rid, { owner }) {
     if (t) { tab = t.dataset.tab; render(); }
     if (e.target.closest('[data-live-toggle]')) { showLive = !showLive; render(); }
     if (e.target.closest('[data-qr-toggle]')) { qrOpen = !qrOpen; render(); }
+    // 點虛線卡片本身＝快速核准（點卡片上的按鈕時不算）
     const c = e.target.closest('.pcard.pending');
-    if (c && owner) act.approve(c.dataset.uid);
+    if (c && owner && !e.target.closest('[data-act]')) act.approve(c.dataset.uid);
   });
 
   watchRoom(fb, rid, (next) => {
@@ -271,6 +272,11 @@ function enterRoom(fb, rid, { owner }) {
     if (owner) {
       patch($('#dPlayers'), playersHTML(s));
       patch($('#dSettings'), settingsHTML(s));
+      // 頂列按鈕跟手機「名單」分頁一樣顯示待核准人數
+      const pendN = Object.values(s.players).filter((p) => !p.approved).length;
+      const label = pendN ? `⚙ 名單／設定（${pendN} 待核准）` : '⚙ 名單／設定';
+      if ($('#bDrawer').textContent !== label) $('#bDrawer').textContent = label;
+      $('#bDrawer').classList.toggle('btn-yellow', pendN > 0);
     }
 
     if (m.phase === 'ended') {
@@ -294,10 +300,14 @@ function enterRoom(fb, rid, { owner }) {
                 <button class="btn btn-yellow" data-act="game">進入搶答 ▶</button>
               </div>` : `<span class="badge st-idle">${esc(m.ownerName || '老師')}・等待開始</span>`}
             </div>
-            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點一下核准）。' : '虛線卡片＝等待老師核准。'}</p>
+            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點卡片或「核准」）；滑鼠移到卡片上可改名、移除。' : '虛線卡片＝等待老師核准。'}</p>
             <div class="cards">${list.map(([uid, p]) => `
               <div class="pcard ${p.approved ? '' : 'pending'} ${s.presence[uid] ? '' : 'offline'}" data-uid="${uid}">
-                ${esc(p.name)}<small>${esc([p.cls, groupLabel(p.group)].filter(Boolean).join('・'))}</small></div>`).join('')}</div>
+                ${esc(p.name)}<small>${esc([p.cls, groupLabel(p.group)].filter(Boolean).join('・'))}</small>
+                ${owner ? `<span class="pc-acts">
+                  ${p.approved ? '' : `<button class="btn sm btn-yellow" data-act="approve" data-uid="${uid}">核准</button>`}
+                  <button class="btn sm" data-act="rename" data-uid="${uid}">改名</button>
+                  <button class="btn sm danger" data-act="kick" data-uid="${uid}">移除</button></span>` : ''}</div>`).join('')}</div>
           </div>
         </div>`);
       return;

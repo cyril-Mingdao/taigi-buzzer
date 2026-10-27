@@ -11,7 +11,7 @@
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '19';
+export const APP_VERSION = '20';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',

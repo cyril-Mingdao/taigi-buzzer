@@ -13,12 +13,12 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
-<link rel="stylesheet" href="assets/app.css?v=19">
+<link rel="stylesheet" href="assets/app.css?v=20">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
-  <span class="title" title="v19">課堂搶答</span>
+  <span class="title" title="v20">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
   <button class="btn sm" id="bBack" hidden>← 房間清單</button>
   <span class="spacer"></span>
@@ -36,12 +36,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=19';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=20';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel,
-} from './assets/teacher.js?v=19';
-import { sound } from './assets/sound.js?v=19';
+} from './assets/teacher.js?v=20';
+import { sound } from './assets/sound.js?v=20';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -168,6 +168,9 @@ function publicList(fb, noPermUser = null) {
 }
 
 async function picker(fb, user) {
+  // 首頁也能一鍵開監看分頁：開公開房間清單，再從清單選房間投影
+  $('#bWatch').hidden = false;
+  $('#bWatch').onclick = () => window.open(`${base}?view=public`, '_blank');
   const rooms = await listMyRooms(fb, user.uid);
   const go = (rid) => (isPhone() ? location.assign(remoteUrl(rid)) : enterRoom(fb, rid, { owner: true }));
   main.innerHTML = `
@@ -198,6 +201,7 @@ function enterRoom(fb, rid, { owner }) {
   $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
   fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta/className`)).then((v) => { if (v.val()) $('#roomTag').textContent = `${v.val()}・${rid}`; }).catch(() => {});
   $('#bBack').hidden = owner;
+  $('#bWatch').hidden = !owner;     // 首頁顯示過監看鈕，進非自己的房間時要藏起來
   if (owner) {
     $('#bRemote').hidden = false; $('#bDrawer').hidden = false; $('#bWatch').hidden = false;
     $('#bWatch').onclick = () => window.open(`${base}${roomUrl(rid, true)}`, '_blank');

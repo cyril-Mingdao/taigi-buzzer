@@ -1,0 +1,126 @@
+/*! 台語課堂搶答・拼音題 — © 2026 詹宗龍（臺中明道中學）保留一切權利。 */
+
+/* ══ 小色塊（名單、統計清單、預覽） ══ */
+.sp-chip { display: inline-flex; align-items: stretch; gap: 3px; font-weight: 900; line-height: 1; vertical-align: middle; }
+.sp-b { padding: 5px 7px; border-radius: 6px; font-size: 1.15rem; position: relative; }
+.sp-b.zero { border: 2px dashed #BDBDBD; color: #BDBDBD; background: transparent; }
+.sp-t { display: inline-flex; align-items: center; justify-content: center; min-width: 1.6em; border-radius: 999px; background: var(--yellow); color: var(--black); font-size: .95rem; position: relative; }
+/* 公布後：答錯的部分打斜線變暗、答對的部分加綠框 */
+.sp-chip .ng { opacity: .45; text-decoration: line-through 3px var(--red); }
+.sp-chip .ok { box-shadow: 0 0 0 3px var(--green); }
+
+/* ══ 教師：學生答案歸類（點一列＝公布答案） ══ */
+.sp-tally { display: grid; gap: 6px; margin-bottom: 12px; }
+.sp-tally-head { font-weight: 800; color: var(--yellow); font-size: .95rem; }
+.sp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; padding: 8px 12px; border-radius: 10px;
+  background: var(--grey-d); border: 2px solid #3A3A3A; color: var(--white); cursor: pointer; text-align: left; }
+.sp-row:active { transform: scale(.98); }
+.sp-row.correct { border-color: var(--yellow); background: #3a3300; }
+.sp-row.wrong { opacity: .8; }
+.sp-n { font-size: 1.3rem; color: var(--yellow); font-variant-numeric: tabular-nums; }
+
+/* ══ 教師：輸入臺羅 ══ */
+.reveal.spell-in { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.reveal.spell-in > * { min-width: 0; }
+.spell-row { display: flex; gap: 8px; }
+.spell-row input { flex: 1; min-width: 0; width: 100%; padding: 10px 12px; border-radius: 10px; border: 2px solid var(--yellow); background: var(--white); color: var(--black); font-size: 1.2rem; font-weight: 700; }
+.spell-row .btn, .ctl-panel .spell-row .btn { flex: 0 0 auto; width: auto; padding: 6px 12px; }
+.ctl-panel .reveal.spell-in { grid-template-columns: minmax(0, 1fr); }
+.ctl-panel .spell-row input { font-size: 1rem; padding: 6px 8px; }
+.spell-prev { min-height: 1.6em; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sp-parts-txt { color: #ccc; font-size: .9rem; }
+.sp-err { color: #ff8a8a; font-weight: 700; }
+.sp-key-txt { color: var(--yellow); font-size: 1.2em; }
+.live-chips .sp-tally { margin-bottom: 10px; }
+
+/* ══ 投影：公布後的正解與三部分統計 ══ */
+.answer-view.spell { display: grid; gap: 14px; }
+.sp-key { display: flex; align-items: stretch; justify-content: center; gap: 10px; }
+.sp-kb { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 6px 18px 4px; border-radius: 12px; font-weight: 900; font-size: 3.2rem; line-height: 1.05; }
+.sp-kb small { font-size: .9rem; margin-top: 4px; padding: 1px 10px; border-radius: 999px; background: rgba(0,0,0,.75); color: var(--white); }
+.sp-kb.zero { border: 3px dashed #BDBDBD; color: #BDBDBD; }
+.sp-kt { align-self: center; font-weight: 800; font-size: 1.3rem; }
+.sp-kt b { display: inline-flex; align-items: center; justify-content: center; width: 1.8em; height: 1.8em; border-radius: 50%; background: var(--yellow); color: var(--black); font-size: 1.4em; }
+.sp-parts { display: grid; gap: 8px; }
+.sp-part { display: grid; grid-template-columns: 3em 1fr 4em; align-items: center; gap: 4px 10px; }
+.sp-pl { font-weight: 900; color: var(--yellow); }
+.sp-part .track { height: 22px; background: var(--grey-d); border-radius: 8px; overflow: hidden; }
+.sp-part .track span { display: block; height: 100%; background: var(--yellow); transition: width .5s; }
+.sp-part .num { font-weight: 800; font-variant-numeric: tabular-nums; }
+.sp-wrong { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; font-size: .9rem; }
+.sp-wr { background: #4a1f1f; color: #ffd0d0; padding: 1px 8px; border-radius: 999px; font-weight: 700; }
+.answer-view.spell.big .sp-kb { font-size: clamp(3rem, 9vh, 7rem); }
+.answer-view.spell.big .sp-kt { font-size: 1.8rem; }
+.answer-view.spell.big .sp-part { grid-template-columns: 4em 1fr 5em; font-size: 1.5rem; }
+.answer-view.spell.big .sp-part .track { height: 34px; }
+.answer-view.spell.big .sp-wrong { font-size: 1.2rem; }
+
+/* ══ 學生：拼音作答（一律橫式全螢幕；沿用拼音答題 v10 版面） ══ */
+#sp { position: fixed; top: 0; left: 0; transform-origin: 0 0; overflow: hidden; background: var(--black); color: var(--white); z-index: 30;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  font-family: 'Noto Sans', 'Noto Sans TC', 'Segoe UI', 'Microsoft JhengHei', sans-serif; }
+#sp button { font-family: inherit; color: inherit; border: none; background: none; cursor: pointer; padding: 0; }
+.sp-compose { position: absolute; inset: 0; display: flex; flex-direction: column; padding: .35rem .5rem .45rem; gap: .35rem; }
+.sp-top { flex: 0 0 auto; display: flex; align-items: center; gap: .45rem; height: 2.6rem; }
+.sp-who { height: 100%; display: flex; align-items: center; padding: 0 .7rem; border-radius: .5rem; font-weight: 800; font-size: .95rem; white-space: nowrap; max-width: 9rem; overflow: hidden; text-overflow: ellipsis; border: 2px solid var(--yellow); color: var(--yellow); }
+.sp-combo { flex: 1; display: flex; align-items: center; justify-content: center; gap: .3rem; height: 100%; }
+.sp-slot { min-width: 4.2rem; height: 100%; border: 2px dashed #444; border-radius: .5rem; display: flex; align-items: center; justify-content: center; padding: 0 .6rem; font-weight: 800; font-size: 1.3rem; color: #777; }
+.sp-slot small { font-size: .7rem; font-weight: 500; }
+.sp-slot.filled { border: 2px solid var(--yellow); color: var(--yellow); }
+.sp-plus { color: #777; font-weight: 800; font-size: 1.1rem; }
+#sp .sp-tool { height: 100%; padding: 0 .7rem; border-radius: .5rem; background: var(--grey-d); border: 2px solid #444; font-size: .85rem; font-weight: 800; white-space: nowrap; }
+#sp .sp-send { height: 100%; padding: 0 1rem; border-radius: .5rem; background: #333; color: #777; font-size: 1.05rem; font-weight: 900; white-space: nowrap; }
+#sp .sp-send.ready { background: var(--yellow); color: var(--black); animation: sp-pulse 1s ease-in-out infinite alternate; }
+@keyframes sp-pulse { to { box-shadow: 0 0 0 .3rem rgba(255, 212, 0, .35); } }
+.sp-panels { flex: 1; min-height: 0; display: flex; gap: .45rem; }
+.sp-panel { min-width: 0; display: flex; flex-direction: column; background: #1A1A1A; border: 2px solid var(--grey-d); border-radius: .6rem; padding: .3rem; gap: .3rem; }
+.sp-p-initial { flex: 3.1; }
+.sp-p-final { flex: 7.2; }
+.sp-p-tone { flex: 1; }
+.sp-ptitle { flex: 0 0 auto; background: var(--yellow); color: var(--black); font-weight: 800; font-size: .85rem; text-align: center; border-radius: .35rem; padding: .1rem 0; letter-spacing: .3em; }
+.sp-p-tone .sp-ptitle { letter-spacing: .1em; }
+.sp-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: .3rem; }
+.sp-grow { flex: 1; min-height: 0; display: flex; gap: .3rem; }
+#sp .sp-tile { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 0 .12rem;
+  background: var(--grey-d); border: 2px solid #3A3A3A; border-radius: .45rem; font-weight: 800; font-size: 1.2rem; line-height: 1; color: var(--white); transition: transform .08s; }
+#sp .sp-tile:active { transform: scale(.94); }
+#sp .sp-tile.selected { background: var(--yellow); border-color: var(--yellow); color: var(--black); }
+#sp .sp-tile.zero { font-size: 1rem; font-family: 'Noto Sans TC', sans-serif; }
+.sp-lbl { display: inline-block; white-space: nowrap; }
+.sp-fscroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; position: relative; padding-right: .15rem; }
+.sp-fsec { padding-bottom: .5rem; }
+.sp-fsec-title { position: sticky; top: 0; z-index: 1; background: #1A1A1A; padding: .15rem 0 .25rem; font-family: 'Noto Sans TC', sans-serif; font-weight: 800; font-size: .8rem; color: var(--yellow); display: flex; align-items: center; gap: .4rem; }
+.sp-fsec-title::after { content: ''; flex: 1; height: 2px; background: #3A3A3A; }
+.sp-fgrid { display: grid; grid-template-columns: repeat(var(--final-cols, 6), 1fr); gap: .3rem; }
+#sp .sp-fgrid .sp-tile { height: 2.9rem; }
+.sp-tabs { flex: 0 0 auto; display: flex; gap: .25rem; }
+#sp .sp-tab { flex: 1 1 0; min-width: 0; padding: .28rem .1rem; border-radius: .35rem; background: var(--grey-d); border: 2px solid #3A3A3A; font-size: .8rem; font-weight: 800; white-space: nowrap; overflow: hidden; color: #DDD; }
+#sp .sp-tab.active { background: var(--white); border-color: var(--white); color: var(--black); }
+#sp .sp-tab.has-pick { box-shadow: inset 0 -.25rem 0 var(--yellow); }
+.sp-tgrid { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr; grid-auto-rows: 1fr; gap: .3rem; }
+#sp .sp-tgrid .sp-tile { display: grid; grid-template-columns: 1fr 1fr; align-items: center; column-gap: .3rem; }
+.sp-tgrid .n { justify-self: end; font-variant-numeric: tabular-nums; font-size: 1.25rem; }
+.sp-tgrid .ex { justify-self: start; font-size: .75rem; font-weight: 500; opacity: .8; }
+
+/* ══ 學生：送出後舉牌 ══ */
+.sp-result { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2.6rem 0 2.6rem; background: var(--black); }
+.sp-rgroup { position: absolute; top: .6rem; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: .25rem 1rem; border-radius: .5rem; font-family: 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 1.4rem; line-height: 1.3; border: 2px solid rgba(255,255,255,.85); }
+.sp-rtone { position: absolute; bottom: .5rem; right: .8rem; display: flex; align-items: center; gap: .4rem; font-weight: 800; font-size: 1.1rem; font-family: 'Noto Sans TC', sans-serif; }
+.sp-rtone b { display: inline-flex; align-items: center; justify-content: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--yellow); color: var(--black); font-size: 1.5rem; }
+.sp-rstatus { position: absolute; bottom: .6rem; left: .8rem; right: 7rem; font-family: 'Noto Sans TC', sans-serif; font-weight: 800; font-size: 1.05rem; color: #ccc; }
+.sp-rstatus b { color: var(--yellow); }
+.sp-word { display: flex; align-items: stretch; gap: .06em; line-height: 1; }
+.sp-rb { display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: .12em; padding: .14em .16em .08em; position: relative; }
+.sp-rb .txt { font-weight: 800; white-space: nowrap; letter-spacing: .01em; }
+.sp-rb .cat { font-family: 'Noto Sans TC', sans-serif; font-weight: 800; font-size: .16em; margin-top: .15em; white-space: nowrap; padding: .12em .6em; border-radius: 1em; background: rgba(0,0,0,.78); color: var(--white); }
+.sp-rb.zero { border: .04em dashed #BDBDBD; background: transparent; color: #BDBDBD; }
+.sp-rb.zero .txt { font-weight: 500; }
+/* 公布後各部分對錯標記 */
+.sp-mark { position: absolute; top: -.12em; right: -.1em; width: .32em; height: .32em; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 1em; font-weight: 900; line-height: 1; color: var(--white); border: .03em solid var(--white); }
+.sp-mark span { font-size: .2em; }
+.sp-mark.ok { background: var(--green); }
+.sp-mark.ng { background: var(--red); }
+.sp-rtone .sp-tm { font-size: 1.3rem; }
+.sp-rtone .sp-tm.ok { color: #6fdc8c; }
+.sp-rtone .sp-tm.ng { color: #ff8a8a; }

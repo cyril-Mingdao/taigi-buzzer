@@ -9,9 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=21';
+
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '20';
+export const APP_VERSION = '21';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -47,16 +49,21 @@ export const DEFAULT_META = {
   groupMode: 'none',     // none 個人賽｜first 一組只算第一個按的｜each 每人各自計算｜single 一組只限一台手機
   groupCount: 6,
   joinMode: 'approve',   // approve 老師核准｜auto 自動核准
-  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J
+  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J｜spell 拼音（聲母＋韻母＋聲調）
   wrongPts: 0,           // 搶答答錯扣幾分（0 或負數）
   // answer：是非／選擇題老師選的標準答案（未公布時不存在）
 };
-export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: '選擇 A–D', af: '選擇 A–F', aj: '選擇 A–J' };
+export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: '選擇 A–D', af: '選擇 A–F', aj: '選擇 A–J', spell: '拼音' };
+/** 作答題（是非／選擇／拼音）：學生寫 answers，老師公布標準答案後計分。 */
 export const isChoice = (m) => m.qtype !== 'buzz';
+/** 拼音題：學生選聲母＋韻母＋聲調，答案存成 ts|iah|8（見 spell.js）。 */
+export const isSpell = (m) => m.qtype === 'spell';
+/** 有「單選／複選」之分的題型：選擇題（是非、拼音除外）。 */
+const hasMode = (m) => isChoice(m) && m.qtype !== 'tf' && !isSpell(m);
 /** 複選：選擇題（是非題除外）且 meta.multi 為 true。答案存成排序後的字母串，例如 "AC"；全對才給分。 */
-export const isMulti = (m) => !!m.multi && isChoice(m) && m.qtype !== 'tf';
+export const isMulti = (m) => !!m.multi && hasMode(m);
 /** 題型標籤：選擇題後面標「單選／複選」。 */
-export const qtypeLabel = (m) => `${QTYPES[m.qtype] || ''}${isChoice(m) && m.qtype !== 'tf' ? (isMulti(m) ? '・複選' : '・單選') : ''}`;
+export const qtypeLabel = (m) => `${QTYPES[m.qtype] || ''}${hasMode(m) ? (isMulti(m) ? '・複選' : '・單選') : ''}`;
 /** 各題型的選項；舊版 qtype 'answer' 依 options 欄位相容。 */
 export function optionList(m) {
   if (m.qtype === 'tf') return ['O', 'X'];
@@ -81,10 +88,12 @@ export function choicePoints(answers, key) {
     .forEach(([uid], i) => { pts[uid] = CORRECT_PTS + (SPEED_BONUS[i] || 0); });
   return pts;
 }
+/** 依題型計分：拼音題聲母、韻母、聲調分開給分（spell.js），其餘題型全對才給分。 */
+export const roundPoints = (m, answers, key) => (isSpell(m) ? spellPoints : choicePoints)(answers, key);
 
 /** 成績存到 Google 雲端硬碟用的 Apps Script 網頁應用程式網址（apps-script/Code.gs 部署後填入）。 */
 export const SAVE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzkrq6hIPQiatK3I03FvGaifjOWV7mBowm_8bJWkm7vm-GndJeTx7jyHB2lvwarwn1P6Q/exec';
-export const optionText = (c) => ({ O: '⭕', X: '❌' }[c] || c);
+export const optionText = (c) => (isSpellCode(c) ? spellText(c) : { O: '⭕', X: '❌' }[c] || c);
 export const GROUP_MODES = {
   none: '個人賽（不分組）',
   first: '分組：一組只算第一個按的人',

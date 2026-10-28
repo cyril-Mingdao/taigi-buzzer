@@ -1,10 +1,11 @@
 <!doctype html>
 <!--
   【著作權聲明】
-  台語課堂搶答（學生頁）— 學生以手機加入房間、搶答或選答案
+  台語課堂搶答（學生頁）— 學生以手機加入房間、搶答、選答案或拼音（聲母＋韻母＋聲調）
   Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
   本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
   未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
+  拼音依教育部《臺灣台語羅馬字拼音方案》，其著作權屬原權利人。
 -->
 <html lang="zh-Hant">
 <head>
@@ -13,7 +14,8 @@
 <meta name="author" content="詹宗龍（臺中明道中學）">
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
-<link rel="stylesheet" href="assets/app.css?v=20">
+<link rel="stylesheet" href="assets/app.css?v=21">
+<link rel="stylesheet" href="assets/spell.css?v=21">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -22,9 +24,12 @@
 import {
   loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
-  optionList, optionText, isChoice, isMulti, choicePoints, leaderboard, CORRECT_PTS,
-} from './assets/core.js?v=20';
-import { sound } from './assets/sound.js?v=20';
+  optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
+} from './assets/core.js?v=21';
+import {
+  INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
+} from './assets/spell.js?v=21';
+import { sound } from './assets/sound.js?v=21';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -123,6 +128,11 @@ async function boot() {
 
   /* ── 畫面 ── */
   function render() {
+    spUsed = false;
+    renderMain();
+    if (!spUsed) spClose();
+  }
+  function renderMain() {
     if (!s) return;
     // 只有遊戲中的按鈕畫面用 main._html 快取比對；其他畫面切回來時要清掉
     if (!(s.me && s.me.approved && s.meta.phase === 'game' && !editing && !s.kicked
@@ -202,6 +212,7 @@ async function boot() {
       return void (main.innerHTML = `${header()}<div class="card center"><h2>✅ 已加入！</h2><p>等老師開始…</p></div>`);
     }
     if (m.phase === 'ended') return renderEnded();
+    if (isSpell(m)) return renderSpell();
     if (isChoice(m)) return renderAnswer();
     renderBuzz();
   }
@@ -323,6 +334,210 @@ async function boot() {
     });
     const sm = $('#sendMulti');
     if (sm) sm.onclick = () => { if (sel.size) send([...sel].sort().join('')); };
+  }
+
+  /* ── 拼音題：作答中與送出後都是橫式全螢幕的覆蓋層（#sp），版面沿用「羅馬字拼音答題」v10 ── */
+  let sp = null;            // 覆蓋層元素
+  let spKey = null;         // 目前畫的是哪個畫面（避免別人作答時一直重畫）
+  let spUsed = false;       // 這次 render 有沒有用到覆蓋層
+  let spTab = 0;            // 韻母區目前所在的分類
+  let spFont = '';          // 進入前的根字級（離開時還原）
+  const spPicks = new Map(); // 每題學生選到一半的 { i, f, t }
+  const spPick = (round) => { if (!spPicks.has(round)) spPicks.set(round, { i: null, f: null, t: null }); return spPicks.get(round); };
+
+  function renderSpell() {
+    const m = s.meta;
+    const mine = s.answer ? s.answer.c : (pending && pending.startsWith(`ans${m.round}:`) ? pending.slice(`ans${m.round}:`.length) : null);
+    if (mine) { spUsed = true; return spResult(mine); }
+    if (m.state === 'open') { spUsed = true; return spCompose(); }
+    const status = m.state === 'locked'
+      ? (m.answer ? `時間到，你沒有作答・答案是 ${esc(spellText(m.answer))}` : '時間到')
+      : `第 ${esc(m.round)} 題・拼音題，等老師說開始…`;
+    const html = `${header()}<div class="status">${status}</div>
+      <div class="card center"><p>開始後畫面會轉成<b>橫式</b>：<br>選<b>聲母＋韻母＋聲調</b>，再按「<b>送出</b>」。<br>送出後不能修改。</p></div>`;
+    if (main._html !== html) { main._html = html; main.innerHTML = html; }
+  }
+
+  function spOpen() {
+    if (sp) return;
+    sp = document.createElement('div');
+    sp.id = 'sp';
+    document.body.appendChild(sp);
+    spFont = document.documentElement.style.fontSize;
+    window.addEventListener('resize', spLayout);
+    sp.addEventListener('click', spClick);
+    sp.addEventListener('pointerup', spFullscreen, { once: true });
+    spFullscreen();
+  }
+  function spClose() {
+    if (!sp) return;
+    sp.remove(); sp = null; spKey = null;
+    document.documentElement.style.fontSize = spFont;
+    window.removeEventListener('resize', spLayout);
+  }
+  function spFullscreen() {
+    const el = document.documentElement;
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;     // iPhone Safari 不支援，靠 CSS 旋轉即可
+    try {
+      const p = req.call(el, { navigationUI: 'hide' });
+      if (p && p.then) p.then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+    } catch {}
+  }
+  /** 直拿手機時把覆蓋層轉 90 度成橫式；根字級隨畫面大小縮放。 */
+  function spLayout() {
+    if (!sp) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const portrait = vh > vw;
+    const W = portrait ? vh : vw, H = portrait ? vw : vh;
+    sp.style.width = `${W}px`; sp.style.height = `${H}px`;
+    sp.style.transform = portrait ? `translateX(${vw}px) rotate(90deg)` : 'none';
+    document.documentElement.style.fontSize = `${Math.max(9, Math.min(H / 19, W / 36))}px`;
+    const box = sp.querySelector('.sp-fscroll');
+    if (box) {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+      box.style.setProperty('--final-cols', Math.max(4, Math.min(9, Math.floor((box.clientWidth + 0.3 * rem) / (4.2 * rem)))));
+    }
+    spFitLabels();
+    spFitWord();
+  }
+  /** 同一區的按鈕統一縮小字級，讓最長的標籤也塞得進框（同 v10 fitLabels）。 */
+  function spFitLabels() {
+    if (!sp) return;
+    const labels = [...sp.querySelectorAll('.sp-lbl')];
+    labels.forEach((l) => { l.style.fontSize = ''; });
+    const groups = new Map();
+    labels.forEach((l) => {
+      const b = l.parentElement;
+      const cs = getComputedStyle(b);
+      const avail = b.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+      const need = l.offsetWidth;
+      if (!avail || !need) return;
+      const key = b.closest('.sp-fgrid, .sp-grid, .sp-tabs') || b.parentElement;
+      const g = groups.get(key) || { ratio: 1, items: [] };
+      g.ratio = Math.min(g.ratio, (avail * 0.9) / need);
+      g.items.push([l, parseFloat(getComputedStyle(l).fontSize)]);
+      groups.set(key, g);
+    });
+    groups.forEach((g) => { if (g.ratio < 1) g.items.forEach(([l, f]) => { l.style.fontSize = `${(f * g.ratio).toFixed(1)}px`; }); });
+  }
+  /** 舉牌：字級放大到幾乎佔滿畫面。 */
+  function spFitWord() {
+    const word = sp && sp.querySelector('.sp-word');
+    if (!word) return;
+    const W = sp.clientWidth, H = sp.clientHeight;
+    const size = H * 0.5;
+    word.style.fontSize = `${size}px`;
+    const scale = Math.min((W * 0.92) / word.scrollWidth, (H * 0.6) / word.scrollHeight, 1);
+    word.style.fontSize = `${Math.floor(size * scale)}px`;
+  }
+
+  const tile = (attrs, label, sel, extra = '') => `<button class="sp-tile${sel ? ' selected' : ''}${extra}" ${attrs}><span class="sp-lbl">${label}</span></button>`;
+
+  function spCompose(force = false) {
+    const m = s.meta;
+    const key = `c:${m.round}`;
+    if (spKey === key && !force) return;
+    spOpen();
+    const st = spPick(m.round);
+    const keepScroll = force && sp.querySelector('.sp-fscroll') ? sp.querySelector('.sp-fscroll').scrollTop : 0;
+    spKey = key;
+    const ready = st.i !== null && st.f !== null && st.t !== null;
+    const slot = (v, label) => (v === null ? `<div class="sp-slot"><small>${label}</small></div>` : `<div class="sp-slot filled">${v === '' ? '∅' : esc(v)}</div>`);
+    const initials = INITIAL_ROWS.map((row) => `<div class="sp-grow">${row.items.map((t) => tile(`data-pi="${t}"`, t, st.i === t)).join('')}
+      ${row.zeroAfter ? tile('data-pi="" style="flex-grow:3"', '無聲母', st.i === '', ' zero') : ''}</div>`).join('');
+    const tabs = FINAL_TABS.map((tab, i) => {
+      const picked = st.f !== null && tab.rows.some((r) => r.items.includes(st.f));
+      return `<button class="sp-tab${i === spTab ? ' active' : ''}${picked ? ' has-pick' : ''}" data-ptab="${i}"><span class="sp-lbl">${tab.label}</span></button>`;
+    }).join('');
+    const finals = FINAL_TABS.map((tab, i) => `<div class="sp-fsec" data-fsec="${i}"><div class="sp-fsec-title">${tab.title}</div>
+      <div class="sp-fgrid">${tab.rows.flatMap((r) => r.items).map((f) => tile(`data-pf="${f}"`, f, st.f === f)).join('')}</div></div>`).join('');
+    const tones = TONES.map((t) => `<button class="sp-tile${st.t === t.n ? ' selected' : ''}" data-pt="${t.n}"><span class="n">${t.n}</span><span class="ex">${t.ex}</span></button>`).join('');
+    sp.innerHTML = `<section class="sp-compose">
+      <div class="sp-top">
+        <span class="sp-who">${esc(s.me.name)}・第 ${esc(m.round)} 題</span>
+        <div class="sp-combo">${slot(st.i, '聲母')}<span class="sp-plus">+</span>${slot(st.f, '韻母')}<span class="sp-plus">+</span>${slot(st.t, '聲調')}</div>
+        <button class="sp-tool" data-sp="clear">清除</button>
+        <button class="sp-send${ready ? ' ready' : ''}" data-sp="send" ${ready ? '' : 'disabled'}>送出 ▶</button>
+      </div>
+      <div class="sp-panels">
+        <div class="sp-panel sp-p-initial"><div class="sp-ptitle">聲母</div><div class="sp-grid">${initials}</div></div>
+        <div class="sp-panel sp-p-final"><div class="sp-tabs">${tabs}</div><div class="sp-fscroll">${finals}</div></div>
+        <div class="sp-panel sp-p-tone"><div class="sp-ptitle">聲調</div><div class="sp-tgrid">${tones}</div></div>
+      </div></section>`;
+    const box = sp.querySelector('.sp-fscroll');
+    box.scrollTop = keepScroll;
+    box.addEventListener('scroll', spSyncTab, { passive: true });
+    spLayout();
+  }
+  /** 韻母區捲動時自動標出目前所在的分類。 */
+  function spSyncTab() {
+    const box = sp && sp.querySelector('.sp-fscroll');
+    if (!box) return;
+    let cur = 0;
+    box.querySelectorAll('[data-fsec]').forEach((sec, i) => { if (sec.offsetTop <= box.scrollTop + 4) cur = i; });
+    if (box.scrollTop + box.clientHeight >= box.scrollHeight - 2) cur = FINAL_TABS.length - 1;
+    if (cur === spTab) return;
+    spTab = cur;
+    sp.querySelectorAll('[data-ptab]').forEach((b, i) => b.classList.toggle('active', i === cur));
+  }
+  function spClick(e) {
+    const b = e.target.closest('button');
+    if (!b || !s || spKey !== `c:${s.meta.round}`) return;
+    const m = s.meta;
+    const st = spPick(m.round);
+    if ('ptab' in b.dataset) {
+      spTab = Number(b.dataset.ptab);
+      const box = sp.querySelector('.sp-fscroll');
+      box.scrollTop = sp.querySelector(`[data-fsec="${spTab}"]`).offsetTop;
+      sp.querySelectorAll('[data-ptab]').forEach((x, i) => x.classList.toggle('active', i === spTab));
+      return;
+    }
+    const toggle = (k, v) => { st[k] = st[k] === v ? null : v; navigator.vibrate && navigator.vibrate(15); spCompose(true); };
+    if ('pi' in b.dataset) return toggle('i', b.dataset.pi);
+    if ('pf' in b.dataset) return toggle('f', b.dataset.pf);
+    if ('pt' in b.dataset) return toggle('t', b.dataset.pt);
+    if (b.dataset.sp === 'clear') { st.i = st.f = st.t = null; return spCompose(true); }
+    if (b.dataset.sp === 'send' && st.i !== null && st.f !== null && st.t !== null) spSend(encode(st));
+  }
+  async function spSend(c) {
+    const m = s.meta;
+    pending = `ans${m.round}:${c}`;
+    sound.buzz(); navigator.vibrate && navigator.vibrate(40);
+    render();
+    try { await fb.set(r(`/answers/${m.round}/${uid}`), { c, at: fb.serverTimestamp() }); }
+    catch { pending = null; toast('送出失敗（可能已鎖定）'); render(); }
+  }
+
+  /** 送出後：全螢幕舉牌色塊；老師公布答案後在聲母、韻母、聲調上標 ✓／✗ 並顯示得分。 */
+  function spResult(c) {
+    const m = s.meta;
+    const key = `r:${m.round}:${c}:${m.answer || ''}`;
+    if (spKey === key) return;
+    spOpen();
+    spKey = key;
+    const d = decode(c);
+    const parts = m.answer ? spellParts(c, m.answer) : null;
+    const mark = (ok) => (parts ? `<span class="sp-mark ${ok ? 'ok' : 'ng'}"><span>${ok ? '✓' : '✗'}</span></span>` : '');
+    const ic = initialCat(d.i);
+    const fc = finalCat(d.f);
+    const g = s.me.group;
+    const [gbg, gfg] = g ? GROUP_COLORS[(g - 1) % GROUP_COLORS.length] : ['#111111', '#FFD400'];
+    const pts = m.answer ? (roundPoints(m, s.roundAnswers, m.answer)[uid] || 0) : 0;
+    const status = !m.answer ? '已送出，等老師公布答案'
+      : parts.all ? `🎉 全對！<b>+${pts}</b> 分`
+      : `${pts ? `<b>+${pts}</b> 分・` : '沒有得分・'}答案是 <b>${esc(spellText(m.answer))}</b>`;
+    sp.innerHTML = `<section class="sp-result">
+      <div class="sp-rgroup" style="background:${gbg};color:${gfg}">${g ? `第 ${g} 組・` : ''}${esc(s.me.name)}</div>
+      <div class="sp-word">
+        <div class="sp-rb${d.i ? '' : ' zero'}" style="${d.i ? `background:${ic.bg};color:${ic.fg}` : ''}"><span class="txt">${d.i || '∅'}</span><span class="cat">${ic.name}</span>${mark(parts && parts.i)}</div>
+        <div class="sp-rb" style="background:${fc.bg};color:${fc.fg}"><span class="txt">${toneFinal(d.f, d.t)}</span><span class="cat">${fc.name}</span>${mark(parts && parts.f)}</div>
+      </div>
+      <div class="sp-rstatus">${status}</div>
+      <div class="sp-rtone">第 <b>${d.t}</b> 調${parts ? `<span class="sp-tm ${parts.t ? 'ok' : 'ng'}">${parts.t ? '✓' : '✗'}</span>` : ''}</div>
+    </section>`;
+    spLayout();
   }
 
 }

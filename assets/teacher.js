@@ -8,8 +8,9 @@ import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
-  CORRECT_PTS, choicePoints, isMulti, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=20';
+  CORRECT_PTS, roundPoints, isMulti, isSpell, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
+} from './core.js?v=21';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=21';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -192,14 +193,14 @@ export function makeActions(fb, rid, getState) {
       return fb.update(r(), upd).catch((e) => toast(authErrorText(e)));
     },
 
-    /** 是非／選擇題：老師選標準答案後核對全部作答並計分（答對 10 分＋前五名速度加成）；
-        改選別的答案＝更正，分數依新舊答案差額重算。 */
+    /** 是非／選擇／拼音題：老師選標準答案後核對全部作答並計分（答對 10 分＋前五名速度加成；
+        拼音題聲母、韻母、聲調分開給分）；改選別的答案＝更正，分數依新舊答案差額重算。 */
     reveal(ans) {
       const s = getState();
       const prev = s.meta.answer || null;
       if (prev === ans) return;
-      const oldPts = choicePoints(s.answers, prev);
-      const newPts = choicePoints(s.answers, ans);
+      const oldPts = roundPoints(s.meta, s.answers, prev);
+      const newPts = roundPoints(s.meta, s.answers, ans);
       const upd = { 'meta/answer': ans, 'meta/state': 'locked', [`keys/${s.meta.round}`]: ans };
       for (const uid of new Set([...Object.keys(oldPts), ...Object.keys(newPts)])) {
         const p = s.players[uid];
@@ -308,7 +309,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=20';
+export { qtypeLabel } from './core.js?v=21';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -316,7 +317,16 @@ export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
 
 /** 只在 HTML 字串有變時才替換，避免下拉選單開著時被重繪關掉。 */
 export function patch(el, html) {
-  if (el && el._html !== html) { el._html = html; el.innerHTML = html; }
+  if (!el || el._html === html) return;
+  // 重繪時保住輸入框的焦點與游標（拼音題老師打字到一半，學生答案進來也不會被打斷）
+  const a = document.activeElement;
+  const key = a && el.contains(a) ? a.getAttribute('data-keep-focus') : null;
+  const sel = key ? [a.selectionStart, a.selectionEnd] : null;
+  el._html = html; el.innerHTML = html;
+  if (key) {
+    const n = el.querySelector(`[data-keep-focus="${key}"]`);
+    if (n) { n.focus(); try { n.setSelectionRange(sel[0], sel[1]); } catch {} }
+  }
 }
 
 const grouped = (m) => m.groupMode === 'first' || m.groupMode === 'single';
@@ -353,6 +363,7 @@ export function orderHTML(s, { judging = true, big = false } = {}) {
 /** 是非／選擇題：作答人數、各選項分布、公布後答對名單（含本題得分）。 */
 export function answerHTML(s, { big = false } = {}) {
   const m = s.meta;
+  if (isSpell(m)) return spellAnswerHTML(s, { big });
   const opts = optionList(m);
   const total = Object.values(s.players).filter((p) => p.approved).length;
   const list = Object.entries(s.answers).filter(([uid]) => s.players[uid]);
@@ -369,7 +380,7 @@ export function answerHTML(s, { big = false } = {}) {
       <span class="track"><span style="width:${revealed ? pct : 0}%"></span></span>
       <span class="num">${revealed ? c : ''}</span></div>`;
   }).join('');
-  const pts = revealed ? choicePoints(s.answers, m.answer) : {};
+  const pts = revealed ? roundPoints(m, s.answers, m.answer) : {};
   const winners = Object.keys(pts).filter((uid) => s.players[uid])
     .sort((a, b) => pts[b] - pts[a] || s.answers[a].at - s.answers[b].at);
   return `<div class="answer-view${big ? ' big' : ''} ${opts.length > 5 ? 'many' : ''}" style="--n:${opts.length}">
@@ -394,8 +405,8 @@ export function liveAnswersHTML(s) {
   const counts = Object.fromEntries(opts.map((o) => [o, 0]));
   for (const [uid] of done) for (const ch of String(s.answers[uid].c || '')) if (ch in counts) counts[ch]++;
   const revealed = !!m.answer;
-  const pts = revealed ? choicePoints(s.answers, m.answer) : {};
-  const dist = opts.map((o) => `<span class="dist-item ${revealed && String(m.answer).includes(o) ? 'correct' : ''}">
+  const pts = revealed ? roundPoints(m, s.answers, m.answer) : {};
+  const dist = isSpell(m) ? spellTallyHTML(s) : opts.map((o) => `<span class="dist-item ${revealed && String(m.answer).includes(o) ? 'correct' : ''}">
     <b>${optionText(o)}</b>${counts[o]}</span>`).join('');
   const off = (uid) => (s.presence[uid] ? '' : ' offline');
   const doneRows = done.map(([uid, p], i) => {
@@ -412,7 +423,7 @@ export function liveAnswersHTML(s) {
   return `<div class="live-ans">
     <div class="live-head">已作答 <b>${done.length}</b> / ${players.length}
       ${wait.length ? `<span class="muted">（未作答 ${wait.length}）</span>` : '<span class="ok-all">全員作答</span>'}</div>
-    <div class="dist">${dist}</div>
+    ${isSpell(m) ? dist : `<div class="dist">${dist}</div>`}
     <ol class="live-list">${doneRows}${waitRows || ''}</ol>
     ${players.length ? '' : '<p class="muted center">還沒有已核准的學生</p>'}
   </div>`;
@@ -436,6 +447,7 @@ export function liveChipsHTML(s) {
       + `<b>${a ? optionText(a.c) : '—'}</b></span>`;
   };
   return `<div class="live-chips">
+    ${isSpell(m) ? spellTallyHTML(s) : ''}
     <div class="live-head">學生作答 <b>${done.length}</b> / ${players.length}
       ${players.length && !wait.length ? '<span class="ok-all">全員作答</span>' : ''}</div>
     <div class="lchips">${[...done, ...wait].map(chip).join('') || '<span class="muted">還沒有已核准的學生</span>'}</div>
@@ -511,11 +523,21 @@ export function controlsHTML(s) {
   const choice = isChoice(m);
   const seg = Object.entries(QTYPES).map(([v, t]) => btn('qtype', t, m.qtype === v ? 'on' : '', false, `data-v="${v}"`)).join('');
   const multi = isMulti(m);
-  const modeSeg = choice && m.qtype !== 'tf'
+  const modeSeg = choice && m.qtype !== 'tf' && !isSpell(m)
     ? `<div class="seg mode-seg">${btn('multi', '單選', multi ? '' : 'on', false, 'data-v="0"')}${btn('multi', '複選', multi ? 'on' : '', false, 'data-v="1"')}</div>`
     : '';
   let reveal = '';
-  if (choice && m.state !== 'idle' && !multi) {
+  if (isSpell(m) && m.state !== 'idle') {
+    // 拼音題：主要從「本題」學生答案清單點選正解；清單裡沒有正解時在這裡輸入臺羅
+    const draft = spellDrafts.get(m.round) ?? '';
+    const pv = spellPreview(draft, m);
+    reveal = `<div class="reveal spell-in"><span>${m.answer ? `標準答案 <b class="sp-key-txt">${esc(spellText(m.answer))}</b>（點清單別列或重新輸入＝更正）`
+        : '點學生答案清單裡的正解，或輸入臺羅：'}</span>
+      <div class="spell-row"><input data-spellin data-keep-focus="spell" value="${esc(draft)}" placeholder="例：tsiah8 或 tsia̍h"
+        autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+        ${btn('sreveal', '✔ 公布', 'btn-yellow', !pv.code)}</div>
+      <div class="spell-prev" data-spellprev>${pv.html}</div></div>`;
+  } else if (choice && m.state !== 'idle' && !multi) {
     reveal = `<div class="reveal"><span>${m.answer ? '標準答案（點別的可更正）' : '選擇標準答案：'}</span>
         ${optionList(m).map((o) => btn('reveal', optionText(o), m.answer === o ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}</div>`;
   } else if (choice && m.state !== 'idle') {
@@ -585,7 +607,8 @@ export function settingsHTML(s) {
     <label>加入方式<select data-set="joinMode">${opt({ approve: '老師核准', auto: '自動核准' }, m.joinMode)}</select></label>
     <label>分組規則<select data-set="groupMode">${opt(GROUP_MODES, m.groupMode)}</select></label>
     ${m.groupMode === 'none' ? '' : `<label>組數<select data-set="groupCount" data-num>${opt(gcs, m.groupCount)}</select></label>`}
-    <p class="note">計分：答對 ${CORRECT_PTS} 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1。</p>
+    <p class="note">計分：答對 ${CORRECT_PTS} 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1。
+      拼音題聲母 ${SPELL_PTS.i}、韻母 ${SPELL_PTS.f}、聲調 ${SPELL_PTS.t} 分分開給分，全對者同樣加速度分。</p>
     <div class="row wrap">
       ${m.phase === 'lobby'
         ? '<button class="btn" data-act="game">進入搶答畫面</button>'
@@ -593,6 +616,83 @@ export function settingsHTML(s) {
       <button class="btn" data-act="resetScores">分數歸零</button>
       <button class="btn danger" data-act="clear">關閉並清除資料</button>
     </div>`;
+}
+
+/* ══ 拼音題 ══════════════════════════════════════════════════════════ */
+
+/** 老師輸入框的草稿（每題一份，只存在這個頁面）。 */
+const spellDrafts = new Map();
+
+/** 輸入框下方的預覽：ts ＋ iah ＋ 第 8 調；回傳 { code, html }，code 為空表示不能公布。 */
+function spellPreview(text, m) {
+  if (!String(text).trim()) return { code: '', html: '' };
+  const r = parseTailo(text);
+  if (r.error) return { code: '', html: `<span class="sp-err">✘ ${esc(r.error)}</span>` };
+  const code = encode(r);
+  const same = code === m.answer;
+  return {
+    code: same ? '' : code,
+    html: `${spellChipHTML(code)} <span class="sp-parts-txt">${r.i ? esc(r.i) : '無聲母'} ＋ ${esc(r.f)} ＋ 第 ${r.t} 調</span>${same ? ' <span class="muted">（已公布）</span>' : ''}`,
+  };
+}
+
+/** 學生答案歸類（人數多的在前、同數依最早交卷），老師點一列＝公布該答案為正解。 */
+export function spellTallyHTML(s) {
+  const m = s.meta;
+  const groups = new Map();
+  for (const [uid, a] of Object.entries(s.answers)) {
+    if (!s.players[uid] || !decode(a.c)) continue;
+    const g = groups.get(a.c) || { c: a.c, n: 0, at: Infinity };
+    g.n++; g.at = Math.min(g.at, a.at || 0);
+    groups.set(a.c, g);
+  }
+  const rows = [...groups.values()].sort((a, b) => b.n - a.n || a.at - b.at);
+  if (!rows.length) return `<div class="sp-tally"><p class="muted center">${m.state === 'open' ? '等待學生送出拼音…' : '沒有人作答'}</p></div>`;
+  return `<div class="sp-tally">
+    <div class="sp-tally-head">${m.answer ? '點別列可更正標準答案' : '👆 點選正確的拼音＝公布答案'}</div>
+    ${rows.map((g) => {
+      const parts = m.answer ? spellParts(g.c, m.answer) : null;
+      const cls = !parts ? '' : parts.all ? ' correct' : ' wrong';
+      return `<button class="sp-row${cls}" data-act="reveal" data-v="${esc(g.c)}">${spellChipHTML(g.c, { parts: parts && !parts.all ? parts : null })}
+        <b class="sp-n">×${g.n}</b></button>`;
+    }).join('')}</div>`;
+}
+
+/** 投影頁：拼音題作答人數；公布後顯示正解大色塊、聲母／韻母／聲調各自答對率與常見錯誤、得分名單。 */
+function spellAnswerHTML(s, { big = false } = {}) {
+  const m = s.meta;
+  const total = Object.values(s.players).filter((p) => p.approved).length;
+  const list = Object.entries(s.answers).filter(([uid, a]) => s.players[uid] && decode(a.c));
+  const n = list.length;
+  const head = `<div class="answered">已作答 <b>${n}</b> / ${total}</div>`;
+  if (!m.answer) return `<div class="answer-view spell${big ? ' big' : ''}">${head}<div class="bigmsg sp-wait">✍ 拼音作答中…</div></div>`;
+  const k = decode(m.answer);
+  const ic = initialCat(k.i);
+  const fc = finalCat(k.f);
+  const key = `<div class="sp-key">
+    <span class="sp-kb${k.i ? '' : ' zero'}" style="${k.i ? `background:${ic.bg};color:${ic.fg}` : ''}">${k.i || '∅'}<small>${ic.name}</small></span>
+    <span class="sp-kb" style="background:${fc.bg};color:${fc.fg}">${toneFinal(k.f, k.t)}<small>${fc.name}</small></span>
+    <span class="sp-kt">第 <b>${k.t}</b> 調</span></div>`;
+  const part = (label, f, show) => {
+    const ok = list.filter(([, a]) => decode(a.c)[f] === k[f]).length;
+    const wrong = new Map();
+    for (const [, a] of list) { const v = decode(a.c)[f]; if (v !== k[f]) wrong.set(v, (wrong.get(v) || 0) + 1); }
+    const top = [...wrong.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([v, c]) => `<span class="sp-wr">${esc(show(v))} ×${c}</span>`).join('');
+    const pct = n ? Math.round((ok / n) * 100) : 0;
+    return `<div class="sp-part"><span class="sp-pl">${label}</span>
+      <span class="track"><span style="width:${pct}%"></span></span><span class="num">${ok}/${n}</span>
+      <span class="sp-wrong">${top || (n ? '<span class="muted">全對</span>' : '')}</span></div>`;
+  };
+  const pts = roundPoints(m, s.answers, m.answer);
+  const winners = Object.keys(pts).filter((uid) => s.players[uid])
+    .sort((a, b) => pts[b] - pts[a] || s.answers[a].at - s.answers[b].at);
+  return `<div class="answer-view spell${big ? ' big' : ''}">${head}${key}
+    <div class="sp-parts">${part('聲母', 'i', (v) => v || '∅')}${part('韻母', 'f', (v) => v)}${part('聲調', 't', (v) => `${v} 調`)}</div>
+    <div class="winners-box"><h3>得分（${winners.length}）</h3>
+      <div class="winners">${winners.map((uid) => `<span class="chip">${unitHTML(s.players[uid], m)}<b>+${pts[uid]}</b></span>`).join('')
+        || '<span class="muted">沒有人得分</span>'}</div></div>
+  </div>`;
 }
 
 /** 複選題老師正在勾選的標準答案（每題一份，只存在這個頁面）；已公布過就從公布的答案開始。 */
@@ -627,9 +727,33 @@ export function bindControls(root, act, { onCleared } = {}) {
       if (sel.size) return act.reveal([...sel].sort().join(''));
       return;
     }
+    if (a === 'sreveal') {
+      const m = act.getMeta();
+      const pv = spellPreview(spellDrafts.get(m.round) ?? '', m);
+      if (pv.code) return act.reveal(pv.code);
+      return;
+    }
     if (a === 'clear') { if (await act.clearRoom()) onCleared && onCleared(); return; }
     if (a === 'save') { if (await act.save()) onCleared && onCleared(); return; }
     if (typeof act[a] === 'function') act[a](uid);
+  });
+  // 拼音題輸入臺羅：即時預覽拆解結果，不重繪整個面板
+  root.addEventListener('input', (e) => {
+    const el = e.target.closest('[data-spellin]');
+    if (!el) return;
+    const m = act.getMeta();
+    spellDrafts.set(m.round, el.value);
+    const box = el.closest('.spell-in');
+    const pv = spellPreview(el.value, m);
+    box.querySelector('[data-spellprev]').innerHTML = pv.html;
+    box.querySelector('[data-act="sreveal"]').disabled = !pv.code;
+  });
+  root.addEventListener('keydown', (e) => {
+    const el = e.target.closest('[data-spellin]');
+    if (!el || e.key !== 'Enter') return;
+    e.preventDefault();
+    const b = el.closest('.spell-in').querySelector('[data-act="sreveal"]');
+    if (!b.disabled) b.click();
   });
   root.addEventListener('change', (e) => {
     const el = e.target.closest('[data-set]');

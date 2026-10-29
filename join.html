@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=21">
-<link rel="stylesheet" href="assets/spell.css?v=21">
+<link rel="stylesheet" href="assets/app.css?v=24">
+<link rel="stylesheet" href="assets/spell.css?v=24">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -26,11 +26,11 @@ import {
   loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
-} from './assets/core.js?v=21';
+} from './assets/core.js?v=24';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=21';
-import { sound } from './assets/sound.js?v=21';
+} from './assets/spell.js?v=24';
+import { sound } from './assets/sound.js?v=24';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;

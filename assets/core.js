@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=21';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=24';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '21';
+export const APP_VERSION = '24';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',

@@ -68,7 +68,7 @@
             ".validate": "newData.isString() && newData.val().matches(/^(buzz|tf|ab|abcd|af|aj|spell)$/)"
           },
           "answer": {
-            ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X|[a-z]{0,3}[|][a-z]{1,5}[|][1234578])$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X|[a-z]{0,3}[|][a-z]{1,5}[|][12345789])$/)"
           },
           "wrongPts": {
             ".validate": "newData.isNumber() && newData.val() >= -10 && newData.val() <= 0"
@@ -162,7 +162,7 @@
               ".write": "auth != null && auth.uid === $uid && !data.exists() && newData.exists() && (root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'tf' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'ab' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'abcd' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'af' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'aj' || root.child('buzzRooms/' + $rid + '/meta/qtype').val() === 'spell') && root.child('buzzRooms/' + $rid + '/meta/state').val() === 'open' && root.child('buzzRooms/' + $rid + '/meta/round').val() === $round && root.child('buzzRooms/' + $rid + '/players/' + $uid + '/approved').val() === true",
               ".validate": "newData.hasChildren(['c', 'at'])",
               "c": {
-                ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X|[a-z]{0,3}[|][a-z]{1,5}[|][1234578])$/)"
+                ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X|[a-z]{0,3}[|][a-z]{1,5}[|][12345789])$/)"
               },
               "at": {
                 ".validate": "newData.val() === now"
@@ -184,7 +184,7 @@
         "keys": {
           ".write": "auth != null && root.child('buzzRooms/' + $rid + '/meta/ownerUid').val() === auth.uid",
           "$round": {
-            ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X|[a-z]{0,3}[|][a-z]{1,5}[|][1234578])$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^([A-J]{1,10}|O|X|[a-z]{0,3}[|][a-z]{1,5}[|][12345789])$/)"
           }
         },
         "$other": {

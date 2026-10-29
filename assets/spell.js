@@ -64,7 +64,7 @@ export const FINAL_TABS = [
 ];
 export const TONES = [
   { n: '1', ex: 'a' }, { n: '2', ex: 'á' }, { n: '3', ex: 'à' }, { n: '4', ex: 'ah' },
-  { n: '5', ex: 'â' }, { n: '7', ex: 'ā' }, { n: '8', ex: 'a̍h' },
+  { n: '5', ex: 'â' }, { n: '7', ex: 'ā' }, { n: '8', ex: 'a̍h' }, { n: '9', ex: 'a̋' },
 ];
 /** 第 1～20 組各一個底色（與拼音答題 v10 相同），[底色, 字色] */
 export const GROUP_COLORS = [
@@ -85,7 +85,7 @@ export const initialCat = (i) => INITIAL_CATS[INITIAL_CAT_OF[i]] || INITIAL_CATS
 export const finalCat = (f) => FINAL_CATS[FINAL_CAT_OF[f]] || FINAL_CATS.vowel;
 
 /* ── 自動標調符：a > oo/o > e > (iu、ui 標後一字) > i/u > 成音節 m、ng ── */
-const TONE_MARK = { 2: '́', 3: '̀', 5: '̂', 7: '̄', 8: '̍' };
+const TONE_MARK = { 2: '́', 3: '̀', 5: '̂', 7: '̄', 8: '̍', 9: '̋' };
 function markIndex(fin) {
   const core = fin.replace(/nn(h?)$/, '$1');
   let i;
@@ -129,7 +129,7 @@ export function parseTailo(input) {
   if (!s) return { error: '請輸入臺羅' };
   if (/[\s\-–]/.test(s)) return { error: '一次只能輸入一個音節' };
   s = s.normalize('NFD').replace(/͘/g, 'o').replace(/ⁿ/g, 'nn');
-  const marks = { '́': '2', '̀': '3', '̂': '5', '̄': '7', '̍': '8' };
+  const marks = { '́': '2', '̀': '3', '̂': '5', '̄': '7', '̍': '8', '̋': '9' };
   let tone = null;
   let bare = '';
   for (const ch of s) {

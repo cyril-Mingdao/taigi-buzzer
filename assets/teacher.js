@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, roundPoints, isMulti, isSpell, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=24';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=24';
+} from './core.js?v=25';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=25';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -309,7 +309,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=24';
+export { qtypeLabel } from './core.js?v=25';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -795,7 +795,7 @@ const stamp = (d = new Date()) => {
 };
 
 /** 產生成績 CSV：一個房間一個檔，檔名＝民國日期＋班級名稱＋_教師名（例如 1151016KM21_詹宗龍.csv）。
-    答對題數＝是非／選擇題答對＋搶答被判 ✓；作答次數＝作答＋搶答次數。 */
+    答對題數＝是非／選擇題答對＋搶答被判 ✓；作答次數＝作答＋搶答次數；之後每題一欄作答明細。 */
 export function buildScoreFiles(s, when = new Date()) {
   const raw = s.raw || {};
   const keys = raw.keys || {};
@@ -814,17 +814,31 @@ export function buildScoreFiles(s, when = new Date()) {
   const list = Object.entries(s.players).filter(([, p]) => p.approved).map(([uid, p]) => ({ uid, ...p }));
   if (!list.length) return [];
   list.sort((a, b) => (b.score || 0) - (a.score || 0) || a.name.localeCompare(b.name, 'zh-Hant'));
+  // 逐題作答明細：每題一欄，欄名附標準答案；格子＝學生答案＋✓／✗，搶答題記「搶答 ✓／✗」，沒作答留空
+  const roundNos = [...new Set([...Object.keys(raw.answers || {}), ...Object.keys(raw.buzzes || {}), ...Object.keys(keys)])]
+    .map(Number).filter((n) => n > 0).sort((a, b) => a - b);
+  const roundHead = roundNos.map((n) => (keys[n] ? `第${n}題（${optionText(keys[n])}）` : `第${n}題`));
+  const roundCell = (uid, n) => {
+    const a = ((raw.answers || {})[n] || {})[uid];
+    if (a) return keys[n] ? `${optionText(a.c)} ${a.c === keys[n] ? '✓' : '✗'}` : optionText(a.c);
+    if (((raw.buzzes || {})[n] || {})[uid]) {
+      const j = ((raw.judges || {})[n] || {})[uid];
+      return j === 'right' ? '搶答 ✓' : j === 'wrong' ? '搶答 ✗' : '搶答';
+    }
+    return '';
+  };
   let rank = 0;
   const rows = list.map((p, i) => {
     if (i === 0 || (p.score || 0) !== (list[i - 1].score || 0)) rank = i + 1;
-    return [rank, p.cls || OTHER_CLASS, p.name, p.group ? groupLabel(p.group) : '', p.score || 0, correct[p.uid] || 0, tried[p.uid] || 0];
+    return [rank, p.cls || OTHER_CLASS, p.name, p.group ? groupLabel(p.group) : '', p.score || 0, correct[p.uid] || 0, tried[p.uid] || 0,
+      ...roundNos.map((n) => roundCell(p.uid, n))];
   });
   const className = cleanClassName(s.meta.className) || '未命名班級';
   // 教師名取建房帳號的 Google 顯示名稱；沒有顯示名稱時用信箱 @ 前面那段
   const teacher = cleanClassName(String(s.meta.ownerName || '').split('@')[0]) || '老師';
   const csv = [
     ['台語課堂搶答成績', `班級 ${className}`, `房間 ${s.rid}`, `題數 ${s.meta.round}`, when.toLocaleString('zh-TW', { hour12: false })],
-    ['名次', '學生班級', '姓名', '組別', '總分', '答對題數', '作答次數'],
+    ['名次', '學生班級', '姓名', '組別', '總分', '答對題數', '作答次數', ...roundHead],
     ...rows,
   ].map((r) => r.map(csvCell).join(',')).join('\r\n');
   return [{ name: `${rocDate(when)}${className}_${teacher}.csv`, csv }];

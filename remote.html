@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・遙控</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=24">
-<link rel="stylesheet" href="assets/spell.css?v=24">
+<link rel="stylesheet" href="assets/app.css?v=25">
+<link rel="stylesheet" href="assets/spell.css?v=25">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   .remote { display: grid; gap: 12px; max-width: 640px; margin: 0 auto; }
@@ -36,11 +36,11 @@
 <main class="wrap-page" id="main"><p class="muted center">載入中…</p></main>
 
 <script type="module">
-import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js?v=24';
+import { normalizeRoom, $, toast, esc, isChoice, QTYPES } from './assets/core.js?v=25';
 import {
   teacherBoot, mountAccountMenu, watchRoom, makeActions, runJobs, remainingSec, patch,
   orderHTML, liveAnswersHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel,
-} from './assets/teacher.js?v=24';
+} from './assets/teacher.js?v=25';
 
 const base = new URL('./', location.href).href;
 const joinUrl = (id) => `${base}join.html?room=${id}`;

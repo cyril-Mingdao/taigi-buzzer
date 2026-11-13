@@ -171,6 +171,8 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .seg select { background: var(--black); color: var(--white); border: 1px solid var(--muted); border-radius: 8px; padding: 6px; }
 .reveal { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; padding: 10px; border: 2px dashed var(--yellow); border-radius: 10px; }
 .reveal .btn { min-width: 3em; font-size: 1.2rem; }
+/* v26：標籤固定獨佔一列，點選標準答案前後（文字變長）選項按鈕不換行重排 */
+.reveal > span { flex: 0 0 100%; }
 .btn.ok.on { background: var(--green); border-color: var(--green); color: var(--white); }
 .btn.ng.on { background: var(--red); border-color: var(--red); color: var(--white); }
 .order li.wrong { opacity: .5; }

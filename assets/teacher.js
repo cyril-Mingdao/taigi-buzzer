@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=30';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=30';
+} from './core.js?v=31';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=31';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -309,7 +309,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=30';
+export { qtypeLabel } from './core.js?v=31';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -610,7 +610,7 @@ export function settingsHTML(s) {
     <label>搶答答錯<select data-set="wrongPts" data-num>${opt({ 0: '不扣分', '-5': '扣 5 分', '-10': '扣 10 分' }, m.wrongPts)}</select></label>
     <label>加入方式<select data-set="joinMode">${opt({ approve: '老師核准', auto: '自動核准' }, m.joinMode)}</select></label>
     <label>分組規則<select data-set="groupMode">${opt(GROUP_MODES, m.groupMode)}</select></label>
-    ${m.groupMode === 'none' ? '' : `<label>組數<select data-set="groupCount" data-num>${opt(gcs, m.groupCount)}</select></label>`}
+    <label>組數<select data-set="groupCount" data-num>${opt(gcs, m.groupCount)}</select></label>
     <p class="note">計分：答對 ${CORRECT_PTS} 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1。
       拼音題聲母 ${SPELL_PTS.i}、韻母 ${SPELL_PTS.f}、聲調 ${SPELL_PTS.t} 分分開給分，全對者同樣加速度分。排序題順序全對才給分。</p>
     <div class="row wrap">

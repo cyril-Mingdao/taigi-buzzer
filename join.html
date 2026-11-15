@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=30">
-<link rel="stylesheet" href="assets/spell.css?v=30">
+<link rel="stylesheet" href="assets/app.css?v=31">
+<link rel="stylesheet" href="assets/spell.css?v=31">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=30';
+} from './assets/core.js?v=31';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=30';
-import { sound } from './assets/sound.js?v=30';
+} from './assets/spell.js?v=31';
+import { sound } from './assets/sound.js?v=31';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -157,8 +157,9 @@ async function boot() {
     const m = s.meta;
     const p = s.me || loadProfile();
     const takenGroups = new Set(Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group).map(([, q]) => q.group));
-    const groupSel = m.groupMode === 'none' ? '' : `
-      <label>組別<select id="grp" required><option value="">請選擇</option>${Array.from({ length: m.groupCount }, (_, i) => i + 1)
+    // v31：不論個人賽或分組，加入時都要選組別（個人賽的組別只用來記錄與顯示，不影響計分）
+    const groupSel = `
+      <label>組別<select id="grp" required><option value="">請選擇</option>${Array.from({ length: m.groupCount || 6 }, (_, i) => i + 1)
         .map((g) => {
           const full = m.groupMode === 'single' && takenGroups.has(g);
           return `<option value="${g}" ${p.group === g ? 'selected' : ''} ${full ? 'disabled' : ''}>${groupLabel(g)}${full ? '（已有人）' : ''}</option>`;
@@ -183,7 +184,7 @@ async function boot() {
         group: $('#grp') ? Number($('#grp').value) || 0 : 0,
       };
       if (!data.cls || !data.name) return toast('請選班級並填姓名');
-      if (m.groupMode !== 'none' && !data.group) return toast('請選組別');
+      if (!data.group) return toast('請選組別');
       saveProfile(data);
       try {
         await fb.update(r(`/players/${uid}`), s.me ? data : { ...data, joinedAt: fb.serverTimestamp() });

@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=29';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=29';
+} from './core.js?v=30';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=30';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -309,7 +309,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=29';
+export { qtypeLabel } from './core.js?v=30';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -887,6 +887,15 @@ const csvCell = (v) => {
   const t = String(v ?? '');
   return /[",\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
 };
+/** 學生自己輸入的文字（姓名、班級、組別）：像 1-1、1/2、3:30、001、1e5、1月1日 這種 Excel 會自動轉成日期或數字的，
+    以及開頭是 = + - @ 會被當公式的，包成 ="1-1"，Excel／Google 試算表開啟時原樣顯示為文字。 */
+const textCell = (v) => {
+  const t = String(v ?? '');
+  const risky = /^[=+\-@]/.test(t)
+    || (/\d/.test(t) && /^[\s\d\-\/.:,+%$eE年月日時分秒]+$/.test(t))
+    || /^\d{1,4}\s*[-\/.]\s*[A-Za-z]{3,9}$|^[A-Za-z]{3,9}\s*[-\/.]\s*\d{1,4}$/.test(t);   // 1-Jan、Jan-1
+  return risky ? `="${t.replace(/"/g, '""')}"` : t;
+};
 const stamp = (d = new Date()) => {
   const p = (x) => String(x).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
@@ -928,7 +937,7 @@ export function buildScoreFiles(s, when = new Date()) {
   let rank = 0;
   const rows = list.map((p, i) => {
     if (i === 0 || (p.score || 0) !== (list[i - 1].score || 0)) rank = i + 1;
-    return [rank, p.cls || OTHER_CLASS, p.name, p.group ? groupLabel(p.group) : '', p.score || 0, correct[p.uid] || 0, tried[p.uid] || 0,
+    return [rank, textCell(p.cls || OTHER_CLASS), textCell(p.name), p.group ? groupLabel(p.group) : '', p.score || 0, correct[p.uid] || 0, tried[p.uid] || 0,
       ...roundNos.map((n) => roundCell(p.uid, n))];
   });
   const className = cleanClassName(s.meta.className) || '未命名班級';

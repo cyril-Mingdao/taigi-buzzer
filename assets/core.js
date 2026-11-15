@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=34';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=35';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '34';
+export const APP_VERSION = '35';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -50,7 +50,7 @@ export const DEFAULT_META = {
   groupCap: 2,           // v34：每組允許幾台手機作答（groupMode 'cap' 時使用，預設 2）
   groupCount: 8,         // v33 預設 8 組
   joinMode: 'approve',   // approve 老師核准｜auto 自動核准
-  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J｜spell 拼音（聲母＋韻母＋聲調）｜sort 排序（1–6 排順序）
+  qtype: 'abcd',         // v35 預設選擇 A–D。buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J｜spell 拼音（聲母＋韻母＋聲調）｜sort 排序（1–6 排順序）
   wrongPts: 0,           // 搶答答錯扣幾分（0 或負數）
   // answer：是非／選擇題老師選的標準答案（未公布時不存在）
 };

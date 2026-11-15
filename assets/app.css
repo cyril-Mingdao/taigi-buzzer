@@ -92,7 +92,7 @@ code { background: var(--grey-d); padding: 0 .3em; border-radius: 4px; }
 /* ── 投影頁 ── */
 .lobby { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 24px; align-items: start; }
 /* 投影幕常是 16:9 低高度：QR 卡依「可視高度」與寬度取較小者，整張卡不超出畫面
-   卡片高度 ≈ 寬度 + 房間碼與網址約 90px；扣掉頂列與頁面留白約 130px */
+   卡片高度 ≈ 寬度 + 教室碼與網址約 90px；扣掉頂列與頁面留白約 130px */
 .lobby .qrbox { width: clamp(180px, min(42vw, calc(100dvh - 205px)), 640px); }
 .lobby .qrbox .code { font-size: clamp(1.6rem, 5dvh, 3rem); }
 .qrbox { background: var(--white); color: var(--black); border-radius: var(--radius); padding: 18px; text-align: center; }
@@ -205,7 +205,7 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .opts .btn.correct { background: var(--green); border-color: var(--green); color: var(--white); }
 .opts .btn.wrong { background: var(--red); border-color: var(--red); color: var(--white); }
 
-/* ── v06：公開房間清單、頒獎台、多選項 ── */
+/* ── v06：公開教室清單、頒獎台、多選項 ── */
 .rooms-page { display: grid; gap: 12px; }
 .room-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
 .room-card { display: grid; gap: 6px; text-align: left; background: var(--white); color: var(--black); border: 3px solid transparent; border-radius: var(--radius); padding: 16px 18px; cursor: pointer; font: inherit; }
@@ -426,3 +426,52 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .reveal .kreveal:disabled { opacity: .4; }
 .btn.send-multi { display: block; width: 100%; flex: 0 0 auto; padding: 14px 10px; font-size: 1.3rem; }
 .btn.send-multi:disabled { opacity: .4; }
+
+/* ── v27：排序題（沿用排序舉牌的 1–6 色塊） ── */
+.sort-grid { flex: 1 1 0; min-height: 0; display: grid; grid-template-columns: 1fr; grid-template-rows: repeat(var(--n), 1fr); gap: 8px; }
+.sort-grid.row { grid-template-columns: repeat(var(--n), 1fr); grid-template-rows: 1fr; }
+.sort-blk { position: relative; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-weight: 900; line-height: 1;
+  box-shadow: 0 4px 6px rgba(0,0,0,.3); text-shadow: 1px 1px 3px rgba(0,0,0,.3); cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none;
+  transition: transform .15s, opacity .15s; min-height: 0; overflow: hidden; }
+.sort-blk.dragging { opacity: .5; transform: scale(.95); z-index: 2; }
+.sort-blk.fixed { cursor: default; }
+.sort-blk.ok { outline: 5px solid var(--green); outline-offset: -5px; }
+.sort-blk.ng { outline: 5px solid var(--red); outline-offset: -5px; opacity: .55; }
+.sort-blk.ng::after { content: '✗'; position: absolute; top: 4px; right: 8px; font-size: 22px; color: #fff; text-shadow: 0 0 4px #000; }
+.sort-acts { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; flex-shrink: 0; }
+.sort-chips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.sort-chips .sc, .sort-draft .sc { display: inline-grid; place-items: center; width: 1.6em; height: 1.6em; border-radius: 6px; font-weight: 900; font-size: .95em; text-shadow: none; }
+.sort-chips .sc.off { opacity: .3; outline: 2px solid var(--red); outline-offset: -2px; }
+.sort-draft .sc.empty { border: 2px dashed #666; }
+.sort-draft { display: flex; gap: 3px; margin: 4px 0; }
+.sort-draft .sort-chips { gap: 3px; }
+.sort-pad { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.sort-chosen { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.sort-sel { display: inline-flex; align-items: center; gap: 6px; background: #3a3300; border: 2px solid var(--yellow); border-radius: 10px; padding: 4px 8px; color: var(--white); cursor: pointer; }
+.sort-sel .x { color: var(--yellow); font-weight: 900; }
+.sort-tally .sp-row .ck { font-size: 1.3rem; color: var(--yellow); }
+.sort-tally .sp-row.picked { border-color: var(--yellow); background: #3a3300; }
+.sort-tally > .btn { justify-self: start; }
+.reveal.sort-in > span { flex: 0 0 100%; }
+.answer-view.sort .sort-key { display: grid; gap: 8px; justify-items: center; margin: 10px 0 14px; }
+.sort-keyrow { display: flex; align-items: center; gap: 14px; }
+.sort-keyrow .num { font-weight: 800; color: var(--yellow); font-size: 1.3rem; }
+.sort-chips.big { gap: 8px; }
+.sort-chips.big .sc { width: 2.4em; height: 2.4em; font-size: 1.8rem; border-radius: 12px; }
+.answer-view.big .sort-chips.big .sc { font-size: 3rem; }
+.sort-key.multi .sort-chips.big .sc { font-size: 1.5rem; }
+.answer-view.big .sort-key.multi .sort-chips.big .sc { font-size: 2.2rem; }
+.sort-or { font-weight: 900; color: var(--muted); }
+.reveal.sort-in, .ctl-panel .reveal.sort-in { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.reveal.sort-in > * { min-width: 0; }
+.reveal.sort-in .sort-pad { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: 0; }
+.reveal.sort-in .sort-pad .btn { width: 100%; min-width: 0; padding: 4px 0; font-size: 1.1rem; }
+.reveal.sort-in .sort-pad .btn:nth-child(n+7) { grid-column: span 3; font-size: .95rem; }
+.reveal.sort-in .sort-pad .btn:disabled { opacity: .35; }
+.reveal.sort-in > .btn { width: 100%; }
+.reveal.sort-in > .btn:disabled { opacity: .4; }
+/* 排序正解大色塊依畫面寬度縮放，不溢出 */
+.sort-chips.big .sc { font-size: clamp(1rem, 4.2vw, 1.6rem); }
+.answer-view.big .sort-chips.big .sc { font-size: clamp(1rem, 2vw, 3rem); }
+.answer-view.big .sort-key.multi .sort-chips.big .sc { font-size: clamp(.9rem, 1.6vw, 2.2rem); }
+.answer-view.big .sort-keyrow .num { font-size: clamp(1rem, 1.6vw, 2rem); white-space: nowrap; }

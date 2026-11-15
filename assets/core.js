@@ -1,6 +1,6 @@
 /*! 台語課堂搶答 — © 2026 詹宗龍（臺中明道中學）保留一切權利。 */
 /**
- * core.js — 三個頁面共用：Firebase 初始化、登入、房間碼、班級清單、伺服器時間、小工具。
+ * core.js — 三個頁面共用：Firebase 初始化、登入、教室碼、班級清單、伺服器時間、小工具。
  *
  * 身分模型：
  *   - 教師：Google 登入，信箱必須在 TEACHERS（與 taigi-quiz 收件程式 CONFIG.TEACHERS 相同）。
@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=26';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=27';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '26';
+export const APP_VERSION = '27';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -23,7 +23,7 @@ export const TEACHERS = [
 ];
 export const isTeacherEmail = (email) => TEACHERS.includes(String(email || '').toLowerCase());
 
-/* ── 房間碼：6 碼，去掉 0/O/1/I/L（沿用電子白板的字母表，抄在黑板上不會認錯） ── */
+/* ── 教室碼：6 碼，去掉 0/O/1/I/L（沿用電子白板的字母表，抄在黑板上不會認錯） ── */
 const ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 export const newRoomId = () => Array.from({ length: 6 }, () => ALPHABET[(Math.random() * ALPHABET.length) | 0]).join('');
 export const normalizeRoom = (s) => String(s || '').toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 6);
@@ -39,7 +39,7 @@ export const DEPARTMENTS = [
 ];
 export const OTHER_CLASS = '其他';
 
-/* ── 房間預設值 ── */
+/* ── 教室預設值 ── */
 export const DEFAULT_META = {
   phase: 'lobby',        // lobby：大 QR 等人加入；game：進入搶答；ended：活動結束（公開頁顯示頒獎台）
   state: 'idle',         // idle：準備（此時按＝偷跑）；open：開放搶答；locked：鎖定
@@ -49,17 +49,39 @@ export const DEFAULT_META = {
   groupMode: 'none',     // none 個人賽｜first 一組只算第一個按的｜each 每人各自計算｜single 一組只限一台手機
   groupCount: 6,
   joinMode: 'approve',   // approve 老師核准｜auto 自動核准
-  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J｜spell 拼音（聲母＋韻母＋聲調）
+  qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J｜spell 拼音（聲母＋韻母＋聲調）｜sort 排序（1–6 排順序）
   wrongPts: 0,           // 搶答答錯扣幾分（0 或負數）
   // answer：是非／選擇題老師選的標準答案（未公布時不存在）
 };
-export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: '選擇 A–D', af: '選擇 A–F', aj: '選擇 A–J', spell: '拼音' };
+export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: '選擇 A–D', af: '選擇 A–F', aj: '選擇 A–J', spell: '拼音', sort: '排序 1–6' };
 /** 作答題（是非／選擇／拼音）：學生寫 answers，老師公布標準答案後計分。 */
 export const isChoice = (m) => m.qtype !== 'buzz';
 /** 拼音題：學生選聲母＋韻母＋聲調，答案存成 ts|iah|8（見 spell.js）。 */
 export const isSpell = (m) => m.qtype === 'spell';
+/** 排序題（v27，沿用「排序舉牌」網頁）：學生把 1–6 色塊拖曳排好順序，答案存成 6 碼數字串，例如 315264；全對才給分。
+    正解可以不只一種：標準答案存成逗號分隔，例如 315264,315246，學生符合其中任一個就算對。 */
+export const isSort = (m) => m.qtype === 'sort';
+export const SORT_N = 6;
+/** 排序舉牌網頁的 1–6 色塊顏色（底色、字色）。 */
+export const SORT_COLORS = { 1: ['#e74c3c', '#fff'], 2: ['#3498db', '#fff'], 3: ['#2ecc71', '#fff'], 4: ['#f1c40f', '#333'], 5: ['#9b59b6', '#fff'], 6: ['#1abc9c', '#fff'] };
+/** 是不是合法的排序答案：1–6 每個數字剛好出現一次。 */
+export const isSortCode = (c) => typeof c === 'string' && c.length === SORT_N && /^[1-6]+$/.test(c) && new Set(c).size === SORT_N;
+/** 排序答案的小色塊（mark：與標準答案逐位比對，位置對的打勾樣式、不對的變暗）。 */
+export function sortChipsHTML(c, { key = null, cls = '' } = {}) {
+  if (key && String(key).includes(',')) key = closestKey(c, key);
+  return `<span class="sort-chips ${cls}">${String(c).split('').map((d, i) => {
+    const [bg, fg] = SORT_COLORS[d] || ['#555', '#fff'];
+    const off = key && key[i] !== d ? ' off' : '';
+    return `<span class="sc${off}" style="background:${bg};color:${fg}">${d}</span>`;
+  }).join('')}</span>`;
+}
+/** 多個正解時，挑跟學生答案位置相同最多的那一個來比對（標出哪幾格放錯）。 */
+export function closestKey(c, key) {
+  const same = (k) => k.split('').filter((d, i) => c[i] === d).length;
+  return String(key).split(',').reduce((best, k) => (same(k) > same(best) ? k : best));
+}
 /** 有「單選／複選」之分的題型：選擇題（是非、拼音除外）。 */
-const hasMode = (m) => isChoice(m) && m.qtype !== 'tf' && !isSpell(m);
+const hasMode = (m) => isChoice(m) && m.qtype !== 'tf' && !isSpell(m) && !isSort(m);
 /** 複選：選擇題（是非題除外）且 meta.multi 為 true。答案存成排序後的字母串，例如 "AC"；全對才給分。 */
 export const isMulti = (m) => !!m.multi && hasMode(m);
 /** 題型標籤：選擇題後面標「單選／複選」。 */
@@ -78,12 +100,14 @@ export function optionList(m) {
 /* ── 計分：答對 10 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1 ── */
 export const CORRECT_PTS = 10;
 export const SPEED_BONUS = [5, 4, 3, 2, 1];
+/** 學生答案 c 是否符合標準答案 key（排序題的 key 可能是逗號分隔的多個正解；其他題型不含逗號，等同 c === key）。 */
+export const answerMatches = (c, key) => !!key && String(key).split(',').includes(c);
 /** 某一題的得分表 { uid: 分數 }（key＝標準答案；answers＝{ uid: { c, at } }）。 */
 export function choicePoints(answers, key) {
   const pts = {};
   if (!key) return pts;
   Object.entries(answers || {})
-    .filter(([, a]) => a && a.c === key)
+    .filter(([, a]) => a && answerMatches(a.c, key))
     .sort((a, b) => a[1].at - b[1].at || (a[0] < b[0] ? -1 : 1))
     .forEach(([uid], i) => { pts[uid] = CORRECT_PTS + (SPEED_BONUS[i] || 0); });
   return pts;
@@ -93,7 +117,8 @@ export const roundPoints = (m, answers, key) => (isSpell(m) ? spellPoints : choi
 
 /** 成績存到 Google 雲端硬碟用的 Apps Script 網頁應用程式網址（apps-script/Code.gs 部署後填入）。 */
 export const SAVE_ENDPOINT = 'https://script.google.com/macros/s/AKfycbzkrq6hIPQiatK3I03FvGaifjOWV7mBowm_8bJWkm7vm-GndJeTx7jyHB2lvwarwn1P6Q/exec';
-export const optionText = (c) => (isSpellCode(c) ? spellText(c) : { O: '⭕', X: '❌' }[c] || c);
+export const optionText = (c) => (String(c).includes(',') ? String(c).split(',').map(optionText).join(' 或 ')
+  : isSpellCode(c) ? spellText(c) : isSortCode(c) ? c.split('').join('→') : { O: '⭕', X: '❌' }[c] || c);
 export const GROUP_MODES = {
   none: '個人賽（不分組）',
   first: '分組：一組只算第一個按的人',
@@ -178,7 +203,7 @@ export function authErrorText(e) {
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const groupLabel = (g) => (g ? `第 ${g} 組` : '');
-/** 房間班級名稱（老師建房時輸入）；去掉檔名不能用的字元。 */
+/** 教室班級名稱（老師建房時輸入）；去掉檔名不能用的字元。 */
 export const cleanClassName = (v) => String(v || '').replace(/[\\/:*?"<>|\r\n]/g, '').trim().slice(0, 20);
 /** 民國日期，例如 1151014 */
 export const rocDate = (d = new Date()) => `${d.getFullYear() - 1911}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;

@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   【著作權聲明】
-  台語課堂搶答（學生頁）— 學生以手機加入房間、搶答、選答案或拼音（聲母＋韻母＋聲調）
+  台語課堂搶答（學生頁）— 學生以手機加入教室、搶答、選答案、拼音（聲母＋韻母＋聲調）或排序（1–6）
   Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
   本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
   未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=26">
-<link rel="stylesheet" href="assets/spell.css?v=26">
+<link rel="stylesheet" href="assets/app.css?v=27">
+<link rel="stylesheet" href="assets/spell.css?v=27">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -26,11 +26,12 @@ import {
   loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
-} from './assets/core.js?v=26';
+  isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
+} from './assets/core.js?v=27';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=26';
-import { sound } from './assets/sound.js?v=26';
+} from './assets/spell.js?v=27';
+import { sound } from './assets/sound.js?v=27';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -46,12 +47,12 @@ if (!rid) askRoom(); else boot();
 function askRoom() {
   main.innerHTML = `
     <div class="card"><h2>加入搶答</h2>
-      <form id="f"><label>房間碼<input id="code" maxlength="6" autocomplete="off" placeholder="例如 7K3QXA" style="text-transform:uppercase;letter-spacing:.2em"></label>
+      <form id="f"><label>教室碼<input id="code" maxlength="6" autocomplete="off" placeholder="例如 7K3QXA" style="text-transform:uppercase;letter-spacing:.2em"></label>
       <button class="btn btn-yellow big">進入</button></form></div>`;
   $('#f').onsubmit = (e) => {
     e.preventDefault();
     rid = normalizeRoom($('#code').value);
-    if (rid.length !== 6) return toast('房間碼是 6 碼');
+    if (rid.length !== 6) return toast('教室碼是 6 碼');
     history.replaceState(null, '', `?room=${rid}${slot ? `&slot=${slot}` : ''}`);
     boot();
   };
@@ -93,7 +94,7 @@ async function boot() {
     if (!v || !v.meta) {
       main.innerHTML = s
         ? '<div class="card center"><h2>本次搶答已結束</h2><p>謝謝參與！</p></div>'
-        : `<div class="card center"><h2>找不到房間 ${esc(rid)}</h2><p>請確認大螢幕上的房間碼。</p><a class="btn btn-yellow" href="join.html">重新輸入</a></div>`;
+        : `<div class="card center"><h2>找不到教室 ${esc(rid)}</h2><p>請確認大螢幕上的教室碼。</p><a class="btn btn-yellow" href="join.html">重新輸入</a></div>`;
       s = null;
       return;
     }
@@ -112,7 +113,7 @@ async function boot() {
     if (prev.round !== meta.round) pending = null;
     effects();
     render();
-  }, (e) => { main.innerHTML = `<div class="card center"><h2>無法讀取房間</h2><p>${esc(authErrorText(e))}</p></div>`; });
+  }, (e) => { main.innerHTML = `<div class="card center"><h2>無法讀取教室</h2><p>${esc(authErrorText(e))}</p></div>`; });
 
   setInterval(() => { if (s && s.foul && !isChoice(s.meta)) render(); }, 250);
 
@@ -122,7 +123,7 @@ async function boot() {
       sound.open();
       navigator.vibrate && navigator.vibrate(120);
     }
-    if (m.answer && m.answer !== prev.answer && s.answer) (s.answer.c === m.answer ? sound.first : sound.end)();
+    if (m.answer && m.answer !== prev.answer && s.answer) (answerMatches(s.answer.c, m.answer) ? sound.first : sound.end)();
     if (s.judge && s.judge !== prev.judged) (s.judge === 'right' ? sound.first : sound.end)();
     prev.state = m.state; prev.round = m.round; prev.answer = m.answer || null; prev.judged = s.judge;
   }
@@ -138,7 +139,7 @@ async function boot() {
     // 只有遊戲中的按鈕畫面用 main._html 快取比對；其他畫面切回來時要清掉
     if (!(s.me && s.me.approved && s.meta.phase === 'game' && !editing && !s.kicked
       && (s.meta.groupMode === 'none' || s.me.group))) main._html = null;
-    if (s.kicked) { main.innerHTML = '<div class="card center"><h2>你已被老師移出這個房間</h2></div>'; return; }
+    if (s.kicked) { main.innerHTML = '<div class="card center"><h2>你已被老師移出這個教室</h2></div>'; return; }
     // 老師中途改成分組模式時，還沒有組別的人要先補選組別
     if (!s.me || editing || (s.meta.groupMode !== 'none' && !s.me.group)) return renderForm();
     if (!s.me.approved) return renderPending();
@@ -214,6 +215,7 @@ async function boot() {
     }
     if (m.phase === 'ended') return renderEnded();
     if (isSpell(m)) return renderSpell();
+    if (isSort(m)) return renderSort();
     if (isChoice(m)) return renderAnswer();
     renderBuzz();
   }
@@ -336,6 +338,102 @@ async function boot() {
     const sm = $('#sendMulti');
     if (sm) sm.onclick = () => { if (sel.size) send([...sel].sort().join('')); };
   }
+
+  /* ── 排序題：沿用「排序舉牌」網頁——1–6 色塊拖曳排順序（直式上下排、橫式左右排），按「送出」；送出後不能改 ── */
+  const sortOrders = new Map();   // 每題學生排到一半的順序
+  const sortOrder = (round) => {
+    if (!sortOrders.has(round)) sortOrders.set(round, Array.from({ length: SORT_N }, (_, i) => String(i + 1)).join(''));
+    return sortOrders.get(round);
+  };
+  let sortDrag = null;
+
+  function renderSort() {
+    const m = s.meta;
+    const mine = s.answer ? s.answer.c : (pending && pending.startsWith(`ans${m.round}:`) ? pending.slice(`ans${m.round}:`.length) : null);
+    const canMove = m.state === 'open' && !mine;
+    const order = mine || sortOrder(m.round);
+    const key = m.answer && mine ? (String(m.answer).includes(',') ? closestKey(mine, m.answer) : m.answer) : null;
+    let status;
+    const got = m.answer ? (roundPoints(m, s.roundAnswers, m.answer)[uid] || 0) : 0;
+    const keyText = m.answer ? String(m.answer).split(',').join(' 或 ') : '';
+    if (m.answer) status = !mine ? `答案是 ${keyText}，你沒有作答` : answerMatches(mine, m.answer) ? `🎉 答對了！+${got}` : `答錯了，答案是 ${keyText}`;
+    else if (mine) status = '已送出，等老師公布答案';
+    else if (m.state === 'open') status = '拖曳色塊排好順序，再按「送出」';
+    else if (m.state === 'locked') status = '時間到';
+    else status = `第 ${esc(m.round)} 題・排序題，等老師說開始…`;
+    const blocks = order.split('').map((d, i) => {
+      const [bg, fg] = SORT_COLORS[d];
+      const mark = key ? (key[i] === d ? ' ok' : ' ng') : '';
+      return `<div class="sort-blk${mark}${canMove ? '' : ' fixed'}" data-d="${d}" style="background:${bg};color:${fg}"><span>${d}</span></div>`;
+    }).join('');
+    const html = `${header()}<div class="status">${status}</div>
+      <div class="sort-grid" id="sortGrid" style="--n:${SORT_N}">${blocks}</div>
+      ${canMove ? '<div class="sort-acts"><button class="btn" id="sortReset">重排</button><button class="btn btn-yellow big" id="sortSend">送出</button></div>' : ''}`;
+    if (sortDrag) return;              // 拖曳中不重畫，放開後再畫
+    if (main._html === html) return;
+    main._html = html; main.innerHTML = html;
+    sortFit();
+    if (!canMove) return;
+    const grid = $('#sortGrid');
+    grid.querySelectorAll('.sort-blk').forEach((b) => sortEnableDrag(b, grid, m.round));
+    $('#sortReset').onclick = () => { sortOrders.delete(m.round); render(); };
+    $('#sortSend').onclick = async () => {
+      const c = sortOrder(m.round);
+      pending = `ans${m.round}:${c}`;
+      sound.buzz(); navigator.vibrate && navigator.vibrate(40);
+      render();
+      try { await fb.set(r(`/answers/${m.round}/${uid}`), { c, at: fb.serverTimestamp() }); }
+      catch { pending = null; toast('送出失敗（可能已鎖定）'); render(); }
+    };
+  }
+  /** 拖曳重排（Pointer Events，同排序舉牌網頁）：拖到別的色塊上就插到它的位置。 */
+  function sortEnableDrag(btn, grid, round) {
+    btn.addEventListener('pointerdown', (e) => {
+      sortDrag = btn;
+      btn.classList.add('dragging');
+      try { btn.setPointerCapture(e.pointerId); } catch {}
+    });
+    btn.addEventListener('pointermove', (e) => {
+      if (sortDrag !== btn) return;
+      btn.style.pointerEvents = 'none';
+      const below = document.elementFromPoint(e.clientX, e.clientY);
+      btn.style.pointerEvents = '';
+      const target = below && below.closest('.sort-blk');
+      if (!target || target === btn || target.parentNode !== grid) return;
+      const kids = [...grid.children];
+      if (kids.indexOf(btn) < kids.indexOf(target)) grid.insertBefore(btn, target.nextSibling);
+      else grid.insertBefore(btn, target);
+    });
+    btn.addEventListener('pointerup', sortDragEnd);
+    btn.addEventListener('pointercancel', sortDragEnd);
+    btn.addEventListener('lostpointercapture', sortDragEnd);
+    btn._sort = { grid, round };
+  }
+  /** 放開：記下新順序再重畫。手指移出色塊或瀏覽器沒送 pointerup 時，由 window 的監聽補上，不會卡在拖曳中。 */
+  function sortDragEnd() {
+    const btn = sortDrag;
+    if (!btn) return;
+    sortDrag = null;
+    btn.classList.remove('dragging');
+    const { grid, round } = btn._sort;
+    const next = [...grid.children].map((b) => b.dataset.d).join('');
+    if (next !== sortOrder(round)) { sortOrders.set(round, next); navigator.vibrate && navigator.vibrate(15); }
+    main._html = null;
+    render();
+  }
+  window.addEventListener('pointerup', sortDragEnd);
+  window.addEventListener('pointercancel', sortDragEnd);
+  /** 直式手機上下排、橫式左右排；數字字級跟著色塊大小。 */
+  function sortFit() {
+    const grid = $('#sortGrid');
+    if (!grid) return;
+    grid.classList.toggle('row', window.innerWidth > window.innerHeight);
+    grid.querySelectorAll('.sort-blk').forEach((b) => {
+      const sz = Math.min(b.clientWidth, b.clientHeight) * 0.6;
+      if (sz > 0) b.style.fontSize = `${sz}px`;
+    });
+  }
+  window.addEventListener('resize', () => { if (s && isSort(s.meta)) sortFit(); });
 
   /* ── 拼音題：作答中與送出後都是橫式全螢幕的覆蓋層（#sp），版面沿用「羅馬字拼音答題」v10 ── */
   let sp = null;            // 覆蓋層元素

@@ -1,16 +1,16 @@
 /*! 台語課堂搶答 — © 2026 詹宗龍（臺中明道中學）保留一切權利。 */
 /**
  * teacher.js — 投影頁（index.html）與手機遙控頁（remote.html）共用的教師端邏輯：
- * 登入關卡、房間訂閱、各種操作、控制面板、自動工作（倒數到時鎖定、自動核准）。
+ * 登入關卡、教室訂閱、各種操作、控制面板、自動工作（倒數到時鎖定、自動核准）。
  * 兩個頁面同時開著也沒關係：所有自動工作都是冪等的。
  */
 import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
-  CORRECT_PTS, roundPoints, isMulti, isSpell, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=26';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=26';
+  CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
+} from './core.js?v=27';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=27';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -40,7 +40,7 @@ export async function teacherBoot(root) {
         <div class="card center narrow">
           <h2>教師登入</h2>
           <p>請用學校 Google 帳號（@ms.mingdao.edu.tw）登入。</p>
-          ${who ? `<p class="noperm" role="alert"><b>您無權限建立房間或請切換帳號</b><span>目前登入：${esc(who)}</span></p>` : ''}
+          ${who ? `<p class="noperm" role="alert"><b>您無權限建立教室或請切換帳號</b><span>目前登入：${esc(who)}</span></p>` : ''}
           <div class="row center">
             <button class="btn btn-yellow" id="tLogin">${who ? '⇄ 切換帳號' : 'Google 登入'}</button>
             ${who ? '<button class="btn" id="tOut">登出</button>' : ''}
@@ -94,12 +94,12 @@ export function mountAccountMenu(fb, user) {
   };
 }
 
-/* ══ 房間建立／列出（投影頁開場用） ══════════════════════════════════ */
+/* ══ 教室建立／列出（投影頁開場用） ══════════════════════════════════ */
 
 export async function listMyRooms(fb, uid) {
   const snap = await fb.get(fb.ref(fb.db, `buzzOwners/${uid}`));
   const rooms = Object.entries(snap.val() || {}).map(([rid, createdAt]) => ({ rid, createdAt }));
-  // 超過 24 小時的舊房間順手清掉（個資不留存）
+  // 超過 24 小時的舊教室順手清掉（個資不留存）
   const stale = rooms.filter((r) => Date.now() - r.createdAt > 24 * 3600 * 1000);
   for (const r of stale) {
     await fb.remove(fb.ref(fb.db, `buzzLive/${r.rid}`)).catch(() => {});
@@ -125,10 +125,10 @@ export async function createRoom(fb, user, newRoomId, className) {
     await fb.set(fb.ref(fb.db, `buzzLive/${rid}`), { ownerUid: uid, ownerName, className, createdAt: Date.now(), phase: 'lobby', n: 0 });
     return rid;
   }
-  throw new Error('房間碼重複太多次，請再試一次');
+  throw new Error('教室碼重複太多次，請再試一次');
 }
 
-/* ══ 房間訂閱與操作 ══════════════════════════════════════════════════ */
+/* ══ 教室訂閱與操作 ══════════════════════════════════════════════════ */
 
 export function watchRoom(fb, rid, onChange) {
   return fb.onValue(fb.ref(fb.db, `buzzRooms/${rid}`), (snap) => {
@@ -254,7 +254,7 @@ export function makeActions(fb, rid, getState) {
     async kick(uid) {
       const p = getState().players[uid];
       if (!(await ask({
-        title: `移除「${playerLabel(p || {})}」？`, message: '移除後這支手機不能再加入本房間。', ok: '移除', danger: true,
+        title: `移除「${playerLabel(p || {})}」？`, message: '移除後這支手機不能再加入本教室。', ok: '移除', danger: true,
       }))) return;
       await fb.set(r(`/kicked/${uid}`), true);
       await fb.remove(r(`/players/${uid}`));
@@ -278,7 +278,7 @@ export function makeActions(fb, rid, getState) {
     },
     async clearRoom({ confirm = true } = {}) {
       if (confirm && !(await ask({
-        title: '關閉並清除資料', message: '刪除本房間所有學生姓名與紀錄，此動作無法復原。', ok: '關閉並清除', danger: true,
+        title: '關閉並清除資料', message: '刪除本教室所有學生姓名與紀錄，此動作無法復原。', ok: '關閉並清除', danger: true,
       }))) return false;
       await fb.remove(fb.ref(fb.db, `buzzLive/${rid}`)).catch(() => {});
       await fb.remove(r(''));
@@ -288,7 +288,7 @@ export function makeActions(fb, rid, getState) {
   };
 }
 
-/** 倒數到時自動鎖定、自動核准。每次房間資料變動與每 250ms 呼叫一次。 */
+/** 倒數到時自動鎖定、自動核准。每次教室資料變動與每 250ms 呼叫一次。 */
 export function runJobs(s, act) {
   if (!s) return;
   const m = s.meta;
@@ -309,7 +309,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=26';
+export { qtypeLabel } from './core.js?v=27';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -364,6 +364,7 @@ export function orderHTML(s, { judging = true, big = false } = {}) {
 export function answerHTML(s, { big = false } = {}) {
   const m = s.meta;
   if (isSpell(m)) return spellAnswerHTML(s, { big });
+  if (isSort(m)) return sortAnswerHTML(s, { big });
   const opts = optionList(m);
   const total = Object.values(s.players).filter((p) => p.approved).length;
   const list = Object.entries(s.answers).filter(([uid]) => s.players[uid]);
@@ -406,13 +407,14 @@ export function liveAnswersHTML(s) {
   for (const [uid] of done) for (const ch of String(s.answers[uid].c || '')) if (ch in counts) counts[ch]++;
   const revealed = !!m.answer;
   const pts = revealed ? roundPoints(m, s.answers, m.answer) : {};
-  const dist = isSpell(m) ? spellTallyHTML(s) : opts.map((o) => `<span class="dist-item ${revealed && String(m.answer).includes(o) ? 'correct' : ''}">
+  const tally = isSpell(m) ? spellTallyHTML(s) : isSort(m) ? sortTallyHTML(s) : '';
+  const dist = tally || opts.map((o) => `<span class="dist-item ${revealed && String(m.answer).includes(o) ? 'correct' : ''}">
     <b>${optionText(o)}</b>${counts[o]}</span>`).join('');
   const off = (uid) => (s.presence[uid] ? '' : ' offline');
   const doneRows = done.map(([uid, p], i) => {
     const a = s.answers[uid];
     const dt = typeof m.openAt === 'number' ? `${Math.max(0, (a.at - m.openAt) / 1000).toFixed(1)}s` : '';
-    const mark = !revealed ? '' : a.c === m.answer ? 'right' : 'wrong';
+    const mark = !revealed ? '' : answerMatches(a.c, m.answer) ? 'right' : 'wrong';
     return `<li class="${mark}${off(uid)}"><span class="rank">${i + 1}</span>
       <span class="who"><span class="nm">${esc(playerLabel(p))}</span><span class="pick">${optionText(a.c)}</span>${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span>
       <span class="dt">${dt}</span>
@@ -423,7 +425,7 @@ export function liveAnswersHTML(s) {
   return `<div class="live-ans">
     <div class="live-head">已作答 <b>${done.length}</b> / ${players.length}
       ${wait.length ? `<span class="muted">（未作答 ${wait.length}）</span>` : '<span class="ok-all">全員作答</span>'}</div>
-    ${isSpell(m) ? dist : `<div class="dist">${dist}</div>`}
+    ${tally || `<div class="dist">${dist}</div>`}
     <ol class="live-list">${doneRows}${waitRows || ''}</ol>
     ${players.length ? '' : '<p class="muted center">還沒有已核准的學生</p>'}
   </div>`;
@@ -441,13 +443,13 @@ export function liveChipsHTML(s) {
   const off = (uid) => (s.presence[uid] ? '' : ' offline');
   const chip = ([uid, p]) => {
     const a = s.answers[uid];
-    const mark = !a ? ' waiting' : !m.answer ? '' : a.c === m.answer ? ' right' : ' wrong';
+    const mark = !a ? ' waiting' : !m.answer ? '' : answerMatches(a.c, m.answer) ? ' right' : ' wrong';
     // 卡片只放姓名（班級前綴會把名字擠掉），完整標籤放在滑鼠提示
     return `<span class="lchip${mark}${off(uid)}" title="${esc(playerLabel(p))}"><span class="nm">${esc(p.name || playerLabel(p))}</span>`
-      + `<b>${a ? optionText(a.c) : '—'}</b></span>`;
+      + `<b>${a ? (isSortCode(a.c) ? a.c : optionText(a.c)) : '—'}</b></span>`;
   };
   return `<div class="live-chips">
-    ${isSpell(m) ? spellTallyHTML(s) : ''}
+    ${isSpell(m) ? spellTallyHTML(s) : isSort(m) ? sortTallyHTML(s) : ''}
     <div class="live-head">學生作答 <b>${done.length}</b> / ${players.length}
       ${players.length && !wait.length ? '<span class="ok-all">全員作答</span>' : ''}</div>
     <div class="lchips">${[...done, ...wait].map(chip).join('') || '<span class="muted">還沒有已核准的學生</span>'}</div>
@@ -516,14 +518,14 @@ export function controlsHTML(s) {
       <div class="ctl-main">
         ${btn('save', '💾 儲存成績', 'btn-yellow big')}
         ${btn('resume', '↩ 繼續活動', 'big')}
-        ${btn('clear', '✕ 關閉房間', 'big danger')}
+        ${btn('clear', '✕ 關閉教室', 'big danger')}
       </div>
-      <p class="note">「儲存成績」存成「民國日期＋班級名稱＋_教師名」的 CSV 到雲端硬碟，成功後自動關閉房間；「關閉房間」不存檔直接刪除本房間資料。</p>`;
+      <p class="note">「儲存成績」存成「民國日期＋班級名稱＋_教師名」的 CSV 到雲端硬碟，成功後自動關閉教室；「關閉教室」不存檔直接刪除本教室資料。</p>`;
   }
   const choice = isChoice(m);
   const seg = Object.entries(QTYPES).map(([v, t]) => btn('qtype', t, m.qtype === v ? 'on' : '', false, `data-v="${v}"`)).join('');
   const multi = isMulti(m);
-  const modeSeg = choice && m.qtype !== 'tf' && !isSpell(m)
+  const modeSeg = choice && m.qtype !== 'tf' && !isSpell(m) && !isSort(m)
     ? `<div class="seg mode-seg">${btn('multi', '單選', multi ? '' : 'on', false, 'data-v="0"')}${btn('multi', '複選', multi ? 'on' : '', false, 'data-v="1"')}</div>`
     : '';
   let reveal = '';
@@ -537,6 +539,8 @@ export function controlsHTML(s) {
         autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
         ${btn('sreveal', '✔ 公布', 'btn-yellow', !pv.code)}</div>
       <div class="spell-prev" data-spellprev>${pv.html}</div></div>`;
+  } else if (isSort(m) && m.state !== 'idle') {
+    reveal = sortRevealHTML(m);
   } else if (choice && m.state !== 'idle' && !multi) {
     reveal = `<div class="reveal"><span>${m.answer ? '標準答案（點別的可更正）' : '選擇標準答案：'}</span>
         ${optionList(m).map((o) => btn('reveal', optionText(o), m.answer === o ? 'btn-yellow' : '', false, `data-v="${o}"`)).join('')}</div>`;
@@ -571,7 +575,7 @@ export function playersHTML(s) {
     if (!showPick) return '';
     const a = s.answers[uid];
     if (!a) return '<span class="pick none">未作答</span>';
-    const mark = !s.meta.answer ? '' : a.c === s.meta.answer ? ' right' : ' wrong';
+    const mark = !s.meta.answer ? '' : answerMatches(a.c, s.meta.answer) ? ' right' : ' wrong';
     return `<span class="pick${mark}">${optionText(a.c)}</span>`;
   };
   const row = ([uid, p]) => `
@@ -608,7 +612,7 @@ export function settingsHTML(s) {
     <label>分組規則<select data-set="groupMode">${opt(GROUP_MODES, m.groupMode)}</select></label>
     ${m.groupMode === 'none' ? '' : `<label>組數<select data-set="groupCount" data-num>${opt(gcs, m.groupCount)}</select></label>`}
     <p class="note">計分：答對 ${CORRECT_PTS} 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1。
-      拼音題聲母 ${SPELL_PTS.i}、韻母 ${SPELL_PTS.f}、聲調 ${SPELL_PTS.t} 分分開給分，全對者同樣加速度分。</p>
+      拼音題聲母 ${SPELL_PTS.i}、韻母 ${SPELL_PTS.f}、聲調 ${SPELL_PTS.t} 分分開給分，全對者同樣加速度分。排序題順序全對才給分。</p>
     <div class="row wrap">
       ${m.phase === 'lobby'
         ? '<button class="btn" data-act="game">進入搶答畫面</button>'
@@ -695,6 +699,87 @@ function spellAnswerHTML(s, { big = false } = {}) {
   </div>`;
 }
 
+/* ══ 排序題 ══════════════════════════════════════════════════════════ */
+
+/** 老師正在排的一組順序（依序點 1–6）與已勾選的正解（可多個）；每題一份，只存在這個頁面。 */
+const sortDrafts = new Map();
+const sortDraft = (m) => sortDrafts.get(m.round) ?? '';
+const sortSels = new Map();
+function sortSel(m) {
+  if (!sortSels.has(m.round)) sortSels.set(m.round, new Set(String(m.answer || '').split(',').filter(isSortCode)));
+  return sortSels.get(m.round);
+}
+const selKey = (sel) => [...sel].sort().join(',');
+/** 老師在這個頁面上改了勾選／草稿：請 index.html、remote.html 重畫（本題清單與控制面板都會反映）。 */
+const redraw = () => window.dispatchEvent(new Event('buzz:redraw'));
+
+/** 控制面板的公布區：勾選學生答案清單裡的正解（可多個），或依序點 1–6 排出順序按「加入」；最後按公布。 */
+function sortRevealHTML(m) {
+  const d = sortDraft(m);
+  const sel = sortSel(m);
+  const changed = selKey(sel) !== (m.answer || '');
+  const chosen = [...sel].sort().map((k) => `<button class="sort-sel" data-act="sunsel" data-v="${k}" title="取消這個正解">${sortChipsHTML(k)}<span class="x">✕</span></button>`).join('');
+  return `<div class="reveal sort-in"><span>${m.answer ? `已公布 ${m.answer.split(',').length} 個正解（改勾選後再按公布＝更正）`
+      : '勾選學生答案清單裡的正解（可以不只一個），或依序點出順序後按「加入」：'}</span>
+    <div class="sort-chosen">${chosen || '<span class="muted">尚未勾選正解</span>'}</div>
+    <div class="sort-draft">${d ? sortChipsHTML(d) : ''}${'<span class="sc empty"></span>'.repeat(SORT_N - d.length)}</div>
+    <div class="sort-pad">${Array.from({ length: SORT_N }, (_, i) => String(i + 1))
+      .map((n) => `<button class="btn sm" data-act="spick" data-v="${n}" ${d.includes(n) ? 'disabled' : ''}>${n}</button>`).join('')}
+      <button class="btn sm" data-act="sclear" ${d ? '' : 'disabled'}>清除</button>
+      <button class="btn sm" data-act="sadd" ${d.length === SORT_N && !sel.has(d) ? '' : 'disabled'}>＋ 加入</button></div>
+    <button class="btn btn-yellow" data-act="sortreveal" ${sel.size && changed ? '' : 'disabled'}>✔ 公布答案${sel.size > 1 ? `（${sel.size} 個正解）` : ''}</button></div>`;
+}
+
+/** 學生答案歸類（人數多的在前、同數依最早交卷）；老師點一列＝勾選／取消為正解，再按公布。 */
+export function sortTallyHTML(s) {
+  const m = s.meta;
+  const sel = sortSel(m);
+  const groups = new Map();
+  for (const [uid, a] of Object.entries(s.answers)) {
+    if (!s.players[uid] || !isSortCode(a.c)) continue;
+    const g = groups.get(a.c) || { c: a.c, n: 0, at: Infinity };
+    g.n++; g.at = Math.min(g.at, a.at || 0);
+    groups.set(a.c, g);
+  }
+  const rows = [...groups.values()].sort((a, b) => b.n - a.n || a.at - b.at);
+  if (!rows.length) return `<div class="sp-tally"><p class="muted center">${m.state === 'open' ? '等待學生送出排序…' : '沒有人作答'}</p></div>`;
+  return `<div class="sp-tally sort-tally">
+    <div class="sp-tally-head">👆 勾選正確的順序（可以多個），再按「公布答案」</div>
+    ${rows.map((g) => {
+      const on = sel.has(g.c);
+      const cls = (on ? ' picked' : '') + (!m.answer ? '' : answerMatches(g.c, m.answer) ? ' correct' : ' wrong');
+      return `<button class="sp-row${cls}" data-act="stoggle" data-v="${esc(g.c)}"><span class="ck">${on ? '☑' : '☐'}</span>
+        ${sortChipsHTML(g.c, { key: m.answer && !answerMatches(g.c, m.answer) ? m.answer : null })}
+        <b class="sp-n">×${g.n}</b></button>`;
+    }).join('')}
+    ${m.state !== 'idle' && m.phase !== 'ended' ? `<button class="btn btn-yellow" data-act="sortreveal" ${sel.size && selKey(sel) !== (m.answer || '') ? '' : 'disabled'}>✔ 公布答案${sel.size > 1 ? `（${sel.size} 個正解）` : ''}</button>` : ''}</div>`;
+}
+
+/** 投影頁：排序題作答人數；公布後顯示正確順序大色塊（可多個）與答對名單。 */
+function sortAnswerHTML(s, { big = false } = {}) {
+  const m = s.meta;
+  const total = Object.values(s.players).filter((p) => p.approved).length;
+  const list = Object.entries(s.answers).filter(([uid, a]) => s.players[uid] && isSortCode(a.c));
+  const n = list.length;
+  const right = m.answer ? list.filter(([, a]) => answerMatches(a.c, m.answer)).length : 0;
+  const head = `<div class="answered">已作答 <b>${n}</b> / ${total}${m.answer ? `　答對 <b>${right}</b> 人` : ''}</div>`;
+  if (!m.answer) return `<div class="answer-view sort${big ? ' big' : ''}">${head}<div class="bigmsg sp-wait">🔢 排序作答中…</div></div>`;
+  const keys = m.answer.split(',');
+  const keyHTML = keys.map((k) => {
+    const c = list.filter(([, a]) => a.c === k).length;
+    return `<div class="sort-keyrow">${sortChipsHTML(k, { cls: 'big' })}<span class="num">${c} 人</span></div>`;
+  }).join(keys.length > 1 ? '<div class="sort-or">或</div>' : '');
+  const pts = roundPoints(m, s.answers, m.answer);
+  const winners = Object.keys(pts).filter((uid) => s.players[uid])
+    .sort((a, b) => pts[b] - pts[a] || s.answers[a].at - s.answers[b].at);
+  return `<div class="answer-view sort${big ? ' big' : ''}">${head}
+    <div class="sort-key${keys.length > 1 ? ' multi' : ''}">${keyHTML}</div>
+    <div class="winners-box"><h3>答對（${winners.length}）</h3>
+      <div class="winners">${winners.map((uid) => `<span class="chip">${unitHTML(s.players[uid], m)}<b>+${pts[uid]}</b></span>`).join('')
+        || '<span class="muted">沒有人答對</span>'}</div></div>
+  </div>`;
+}
+
 /** 複選題老師正在勾選的標準答案（每題一份，只存在這個頁面）；已公布過就從公布的答案開始。 */
 const keyDrafts = new Map();
 function keyDraft(m) {
@@ -725,6 +810,19 @@ export function bindControls(root, act, { onCleared } = {}) {
         return;
       }
       if (sel.size) return act.reveal([...sel].sort().join(''));
+      return;
+    }
+    if (['spick', 'sclear', 'sadd', 'stoggle', 'sunsel', 'sortreveal'].includes(a)) {
+      const m = act.getMeta();
+      const d = sortDraft(m);
+      const sel = sortSel(m);
+      if (a === 'sortreveal') { if (sel.size) act.reveal(selKey(sel)); return; }
+      if (a === 'spick') sortDrafts.set(m.round, (d + v).slice(0, SORT_N));
+      if (a === 'sclear') sortDrafts.set(m.round, '');
+      if (a === 'sadd' && isSortCode(d)) { sel.add(d); sortDrafts.set(m.round, ''); }
+      if (a === 'stoggle') { if (sel.has(v)) sel.delete(v); else sel.add(v); }
+      if (a === 'sunsel') sel.delete(v);
+      redraw();
       return;
     }
     if (a === 'sreveal') {
@@ -769,7 +867,7 @@ export function bindControls(root, act, { onCleared } = {}) {
   });
 }
 
-/* ══ 公開房間清單（buzzLive）：教師端維護摘要，投影頁不用登入也看得到 ══════════ */
+/* ══ 公開教室清單（buzzLive）：教師端維護摘要，投影頁不用登入也看得到 ══════════ */
 
 export function syncLive(fb, rid, s) {
   if (!s) return;
@@ -783,7 +881,7 @@ export function syncLive(fb, rid, s) {
   }).catch(() => {});
 }
 
-/* ══ 儲存成績：每班一個 CSV → Apps Script 寫進雲端硬碟資料夾 → 關閉房間 ══════════ */
+/* ══ 儲存成績：每班一個 CSV → Apps Script 寫進雲端硬碟資料夾 → 關閉教室 ══════════ */
 
 const csvCell = (v) => {
   const t = String(v ?? '');
@@ -794,7 +892,7 @@ const stamp = (d = new Date()) => {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
 };
 
-/** 產生成績 CSV：一個房間一個檔，檔名＝民國日期＋班級名稱＋_教師名（例如 1151016KM21_詹宗龍.csv）。
+/** 產生成績 CSV：一個教室一個檔，檔名＝民國日期＋班級名稱＋_教師名（例如 1151016KM21_詹宗龍.csv）。
     答對題數＝是非／選擇題答對＋搶答被判 ✓；作答次數＝作答＋搶答次數；之後每題一欄作答明細。 */
 export function buildScoreFiles(s, when = new Date()) {
   const raw = s.raw || {};
@@ -804,7 +902,7 @@ export function buildScoreFiles(s, when = new Date()) {
   for (const [round, list] of Object.entries(raw.answers || {})) {
     for (const [uid, a] of Object.entries(list || {})) {
       tried[uid] = (tried[uid] || 0) + 1;
-      if (keys[round] && a.c === keys[round]) correct[uid] = (correct[uid] || 0) + 1;
+      if (keys[round] && answerMatches(a.c, keys[round])) correct[uid] = (correct[uid] || 0) + 1;
     }
   }
   for (const list of Object.values(raw.buzzes || {})) for (const uid of Object.keys(list || {})) tried[uid] = (tried[uid] || 0) + 1;
@@ -820,7 +918,7 @@ export function buildScoreFiles(s, when = new Date()) {
   const roundHead = roundNos.map((n) => (keys[n] ? `第${n}題（${optionText(keys[n])}）` : `第${n}題`));
   const roundCell = (uid, n) => {
     const a = ((raw.answers || {})[n] || {})[uid];
-    if (a) return keys[n] ? `${optionText(a.c)} ${a.c === keys[n] ? '✓' : '✗'}` : optionText(a.c);
+    if (a) return keys[n] ? `${optionText(a.c)} ${answerMatches(a.c, keys[n]) ? '✓' : '✗'}` : optionText(a.c);
     if (((raw.buzzes || {})[n] || {})[uid]) {
       const j = ((raw.judges || {})[n] || {})[uid];
       return j === 'right' ? '搶答 ✓' : j === 'wrong' ? '搶答 ✗' : '搶答';
@@ -837,7 +935,7 @@ export function buildScoreFiles(s, when = new Date()) {
   // 教師名取建房帳號的 Google 顯示名稱；沒有顯示名稱時用信箱 @ 前面那段
   const teacher = cleanClassName(String(s.meta.ownerName || '').split('@')[0]) || '老師';
   const csv = [
-    ['台語課堂搶答成績', `班級 ${className}`, `房間 ${s.rid}`, `題數 ${s.meta.round}`, when.toLocaleString('zh-TW', { hour12: false })],
+    ['台語課堂搶答成績', `班級 ${className}`, `教室 ${s.rid}`, `題數 ${s.meta.round}`, when.toLocaleString('zh-TW', { hour12: false })],
     ['名次', '學生班級', '姓名', '組別', '總分', '答對題數', '作答次數', ...roundHead],
     ...rows,
   ].map((r) => r.map(csvCell).join(',')).join('\r\n');
@@ -850,8 +948,8 @@ async function saveScores(fb, rid, getState) {
   if (!files.length) { toast('還沒有已核准的學生，沒有成績可存'); return false; }
   if (!(await ask({
     title: '儲存成績到雲端硬碟',
-    message: `將存成 ${files.map((f) => f.name).join('、')}。成功後會關閉房間。`,
-    ok: '儲存並關閉房間',
+    message: `將存成 ${files.map((f) => f.name).join('、')}。成功後會關閉教室。`,
+    ok: '儲存並關閉教室',
   }))) return false;
   try {
     let result;
@@ -875,7 +973,7 @@ async function saveScores(fb, rid, getState) {
     await fb.remove(fb.ref(fb.db, `buzzRooms/${rid}`));
     await fb.remove(fb.ref(fb.db, `buzzOwners/${fb.auth.currentUser.uid}/${rid}`)).catch(() => {});
     await ask({
-      title: '✅ 成績已儲存，房間已關閉',
+      title: '✅ 成績已儲存，教室已關閉',
       message: result.files.map((f) => f.name).join('\n'),
       ok: '好', cancel: '關閉',
     });
@@ -885,7 +983,7 @@ async function saveScores(fb, rid, getState) {
       : e.code === 'auth/popup-blocked' ? '瀏覽器擋住了 Google 驗證視窗，請允許彈出式視窗後再按一次'
       : (e.message || String(e));
     const dl = await ask({
-      title: '⚠ 成績尚未存到雲端硬碟（房間保留）',
+      title: '⚠ 成績尚未存到雲端硬碟（教室保留）',
       message: `原因：${msg}\n可以再按一次「儲存成績」，或先把成績下載到這台裝置。`,
       ok: '下載 CSV', cancel: '關閉',
     });

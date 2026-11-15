@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   【著作權聲明】
-  台語課堂搶答（投影頁）— 公開房間清單、QR code、學生名單、搶答順序、作答統計與頒獎台；教師登入後可建立與控制房間、看學生即時作答
+  台語課堂搶答（投影頁）— 公開教室清單、QR code、學生名單、搶答順序、作答統計與頒獎台；教師登入後可建立與控制教室、看學生即時作答
   Copyright © 2026 詹宗龍（臺中明道中學）. All rights reserved.
   本網頁之程式碼、版面與教案設計著作權屬詹宗龍所有，僅供非營利之教育教學使用。
   未經著作權人書面授權，不得重製、改作、散布或修改本網頁之全部或一部分。
@@ -14,15 +14,15 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=26">
-<link rel="stylesheet" href="assets/spell.css?v=26">
+<link rel="stylesheet" href="assets/app.css?v=27">
+<link rel="stylesheet" href="assets/spell.css?v=27">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <header class="topbar">
   <span class="title" title="v21">課堂搶答</span>
   <span id="roomTag" class="badge st-open" hidden></span>
-  <button class="btn sm" id="bBack" hidden>← 房間清單</button>
+  <button class="btn sm" id="bBack" hidden>← 教室清單</button>
   <span class="spacer"></span>
   <button class="btn sm" id="bWatch" hidden title="另開不含教師控制的公開畫面">👁 監看分頁</button>
   <button class="btn sm" id="bRemote" hidden>📱 手機遙控</button>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=26';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText } from './assets/core.js?v=27';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel,
-} from './assets/teacher.js?v=26';
-import { sound } from './assets/sound.js?v=26';
+} from './assets/teacher.js?v=27';
+import { sound } from './assets/sound.js?v=27';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -76,7 +76,7 @@ $('#bBack').onclick = () => { location.href = listUrl; };
 const boot = await bootFirebase(main);
 if (boot) start(boot);
 
-/* 進入點：教師帳號 → 教師模式；未登入（或非教師）→ 公開投影模式，不用登入就能選房間觀看 */
+/* 進入點：教師帳號 → 教師模式；未登入（或非教師）→ 公開投影模式，不用登入就能選教室觀看 */
 async function start({ fb, user }) {
   const rid = normalizeRoom(new URL(location.href).searchParams.get('room'));
   if (watch && user) {
@@ -92,7 +92,7 @@ async function start({ fb, user }) {
     if (rid) {
       const meta = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).val();
       if (meta) return enterRoom(fb, rid, { owner: meta.ownerUid === user.uid });
-      toast(`房間 ${rid} 不存在或已關閉`);
+      toast(`教室 ${rid} 不存在或已關閉`);
       history.replaceState(null, '', location.pathname);
     }
     return picker(fb, user);
@@ -107,7 +107,7 @@ async function start({ fb, user }) {
     $('#bLogin').onclick = async () => {
       try {
         const u = await googleSignIn();
-        if (!isTeacherUser(u)) toast('您無權限建立房間或請切換帳號', 4000);
+        if (!isTeacherUser(u)) toast('您無權限建立教室或請切換帳號', 4000);
         setTimeout(() => location.reload(), isTeacherUser(u) ? 0 : 1200);
       } catch (e) { if (e.code !== 'auth/popup-closed-by-user') toast(authErrorText(e)); }
     };
@@ -122,9 +122,9 @@ async function start({ fb, user }) {
   publicList(fb, noPerm ? user : null);
 }
 
-/** 公開房間清單：各老師的房間分開列出，即時更新，點選後投影該房間。 */
+/** 公開教室清單：各老師的教室分開列出，即時更新，點選後投影該教室。 */
 function publicList(fb, noPermUser = null) {
-  main.innerHTML = '<p class="muted center">讀取房間清單…</p>';
+  main.innerHTML = '<p class="muted center">讀取教室清單…</p>';
   const off = fb.onValue(fb.ref(fb.db, 'buzzLive'), (snap) => {
     const day = Date.now() - 24 * 3600 * 1000;
     const rooms = Object.entries(snap.val() || {})
@@ -133,11 +133,11 @@ function publicList(fb, noPermUser = null) {
       .sort((a, b) => b.createdAt - a.createdAt);
     patch(main, `
       <div class="rooms-page">
-        <h2>進行中的房間</h2>
-        ${noPermUser ? `<div class="noperm" role="alert"><b>您無權限建立房間或請切換帳號</b>
-          <span>目前登入：${esc(noPermUser.email || '')}。只有授權的教師帳號能建立房間；你仍可選下方房間觀看。</span>
+        <h2>進行中的教室</h2>
+        ${noPermUser ? `<div class="noperm" role="alert"><b>您無權限建立教室或請切換帳號</b>
+          <span>目前登入：${esc(noPermUser.email || '')}。只有授權的教師帳號能建立教室；你仍可選下方教室觀看。</span>
           <button class="btn sm btn-yellow" data-acct-switch>⇄ 切換帳號</button></div>` : ''}
-        <p class="muted">選擇要投影的房間。老師請用手機按右上角「教師登入」建立房間並操作。</p>
+        <p class="muted">選擇要投影的教室。老師請用手機按右上角「教師登入」建立教室並操作。</p>
         ${rooms.length ? `<div class="room-grid">${rooms.map((r) => `
           <button class="room-card" data-rid="${esc(r.rid)}">
             <span class="rc-code">${esc(r.rid)}</span>
@@ -146,14 +146,14 @@ function publicList(fb, noPermUser = null) {
             <span class="rc-meta"><span class="badge ${r.phase === 'game' ? 'st-open' : r.phase === 'ended' ? 'st-locked' : 'st-idle'}">${PHASE_TEXT[r.phase] || ''}</span>
               ${r.n || 0} 人・${new Date(r.createdAt).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })} 開始</span>
           </button>`).join('')}</div>`
-          : '<div class="card center"><h3>目前沒有進行中的房間</h3><p>老師建立房間後會自動出現在這裡。</p></div>'}
+          : '<div class="card center"><h3>目前沒有進行中的教室</h3><p>老師建立教室後會自動出現在這裡。</p></div>'}
       </div>`);
   });
   main.addEventListener('click', async (e) => {
     if (!e.target.closest('[data-acct-switch]')) return;
     try {
       const u = await googleSignIn();
-      if (!isTeacherUser(u)) toast('您無權限建立房間或請切換帳號', 4000);
+      if (!isTeacherUser(u)) toast('您無權限建立教室或請切換帳號', 4000);
       setTimeout(() => location.reload(), isTeacherUser(u) ? 0 : 1200);
     } catch (err) { if (err.code !== 'auth/popup-closed-by-user') toast(authErrorText(err)); }
   });
@@ -170,7 +170,7 @@ function publicList(fb, noPermUser = null) {
 }
 
 async function picker(fb, user) {
-  // 首頁也能一鍵開監看分頁：開公開房間清單，再從清單選房間投影
+  // 首頁也能一鍵開監看分頁：開公開教室清單，再從清單選教室投影
   $('#bWatch').hidden = false;
   $('#bWatch').onclick = () => window.open(`${base}?view=public`, '_blank');
   const rooms = await listMyRooms(fb, user.uid);
@@ -180,10 +180,10 @@ async function picker(fb, user) {
       <h2>開始一場搶答</h2>
       <form id="fNew" class="new-room">
         <label>班級名稱<input id="cName" maxlength="20" required placeholder="例如 KJ21、高一3" autocomplete="off"></label>
-        <button class="btn btn-yellow big" id="bNew" style="width:100%">＋ 建立新房間</button>
+        <button class="btn btn-yellow big" id="bNew" style="width:100%">＋ 建立新教室</button>
       </form>
-      <p class="note">${isPhone() ? '建立後進入手機控制頁；教室電腦打開本網址（不用登入）選這個房間投影。' : '投影電腦不用登入也能從房間清單選房間投影。'}</p>
-      ${rooms.length ? `<h3 style="margin-top:18px">繼續之前的房間（24 小時內）</h3>
+      <p class="note">${isPhone() ? '建立後進入手機控制頁；教室電腦打開本網址（不用登入）選這個教室投影。' : '投影電腦不用登入也能從教室清單選教室投影。'}</p>
+      ${rooms.length ? `<h3 style="margin-top:18px">繼續之前的教室（24 小時內）</h3>
         <ul class="plist">${rooms.map((r) => `<li><span class="who">${r.rid}<small>${new Date(r.createdAt).toLocaleString('zh-TW')}</small></span>
           <button class="btn sm" data-rid="${r.rid}">繼續</button></li>`).join('')}</ul>` : ''}
     </div>`;
@@ -203,7 +203,7 @@ function enterRoom(fb, rid, { owner }) {
   $('#roomTag').hidden = false; $('#roomTag').textContent = rid;
   fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta/className`)).then((v) => { if (v.val()) $('#roomTag').textContent = `${v.val()}・${rid}`; }).catch(() => {});
   $('#bBack').hidden = owner;
-  $('#bWatch').hidden = !owner;     // 首頁顯示過監看鈕，進非自己的房間時要藏起來
+  $('#bWatch').hidden = !owner;     // 首頁顯示過監看鈕，進非自己的教室時要藏起來
   if (owner) {
     $('#bRemote').hidden = false; $('#bDrawer').hidden = false; $('#bWatch').hidden = false;
     $('#bWatch').onclick = () => window.open(`${base}${roomUrl(rid, true)}`, '_blank');
@@ -243,7 +243,7 @@ function enterRoom(fb, rid, { owner }) {
     if (!next) {
       s = null;
       main._html = null;
-      main.innerHTML = `<div class="card narrow center"><h2>房間已關閉</h2><a class="btn btn-yellow" href="${listUrl}">回房間清單</a></div>`;
+      main.innerHTML = `<div class="card narrow center"><h2>教室已關閉</h2><a class="btn btn-yellow" href="${listUrl}">回教室清單</a></div>`;
       return;
     }
     s = next;
@@ -252,6 +252,8 @@ function enterRoom(fb, rid, { owner }) {
     if (owner) { runJobs(s, act); syncLive(fb, rid, s); }
   });
 
+  // 排序題老師勾選正解（只存在本頁）時重畫
+  window.addEventListener('buzz:redraw', () => { if (s) render(); });
   setInterval(() => {
     if (!s) return;
     if (owner) runJobs(s, act);

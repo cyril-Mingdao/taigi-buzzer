@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=27';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=27';
+} from './core.js?v=28';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=28';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -309,7 +309,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=27';
+export { qtypeLabel } from './core.js?v=28';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -720,13 +720,13 @@ function sortRevealHTML(m) {
   const changed = selKey(sel) !== (m.answer || '');
   const chosen = [...sel].sort().map((k) => `<button class="sort-sel" data-act="sunsel" data-v="${k}" title="取消這個正解">${sortChipsHTML(k)}<span class="x">✕</span></button>`).join('');
   return `<div class="reveal sort-in"><span>${m.answer ? `已公布 ${m.answer.split(',').length} 個正解（改勾選後再按公布＝更正）`
-      : '勾選學生答案清單裡的正解（可以不只一個），或依序點出順序後按「加入」：'}</span>
+      : '勾選學生答案清單裡的正解（可以不只一個），或依序點出順序（可少於 6 個）後按「加入」：'}</span>
     <div class="sort-chosen">${chosen || '<span class="muted">尚未勾選正解</span>'}</div>
     <div class="sort-draft">${d ? sortChipsHTML(d) : ''}${'<span class="sc empty"></span>'.repeat(SORT_N - d.length)}</div>
     <div class="sort-pad">${Array.from({ length: SORT_N }, (_, i) => String(i + 1))
       .map((n) => `<button class="btn sm" data-act="spick" data-v="${n}" ${d.includes(n) ? 'disabled' : ''}>${n}</button>`).join('')}
       <button class="btn sm" data-act="sclear" ${d ? '' : 'disabled'}>清除</button>
-      <button class="btn sm" data-act="sadd" ${d.length === SORT_N && !sel.has(d) ? '' : 'disabled'}>＋ 加入</button></div>
+      <button class="btn sm" data-act="sadd" ${d.length && !sel.has(d) ? '' : 'disabled'}>＋ 加入</button></div>
     <button class="btn btn-yellow" data-act="sortreveal" ${sel.size && changed ? '' : 'disabled'}>✔ 公布答案${sel.size > 1 ? `（${sel.size} 個正解）` : ''}</button></div>`;
 }
 

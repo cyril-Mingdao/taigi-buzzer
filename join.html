@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=27">
-<link rel="stylesheet" href="assets/spell.css?v=27">
+<link rel="stylesheet" href="assets/app.css?v=28">
+<link rel="stylesheet" href="assets/spell.css?v=28">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=27';
+} from './assets/core.js?v=28';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=27';
-import { sound } from './assets/sound.js?v=27';
+} from './assets/spell.js?v=28';
+import { sound } from './assets/sound.js?v=28';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -142,7 +142,7 @@ async function boot() {
     if (s.kicked) { main.innerHTML = '<div class="card center"><h2>你已被老師移出這個教室</h2></div>'; return; }
     // 老師中途改成分組模式時，還沒有組別的人要先補選組別
     if (!s.me || editing || (s.meta.groupMode !== 'none' && !s.me.group)) return renderForm();
-    if (!s.me.approved) return renderPending();
+    if (!s.me.approved) { sortWide(false); return renderPending(); }
     renderPlay();
   }
 
@@ -210,6 +210,7 @@ async function boot() {
 
   function renderPlay() {
     const m = s.meta;
+    sortWide(m.phase === 'game' && isSort(m));
     if (m.phase === 'lobby') {
       return void (main.innerHTML = `${header()}<div class="card center"><h2>✅ 已加入！</h2><p>等老師開始…</p></div>`);
     }
@@ -219,6 +220,8 @@ async function boot() {
     if (isChoice(m)) return renderAnswer();
     renderBuzz();
   }
+  // 排序題的學生頁拿掉 520px 寬度上限，橫式手機色塊才填得滿
+  const sortWide = (on) => main.classList.toggle('sort-wide', on);
 
   /** 活動結束：顯示自己（或自己組）的名次與分數。 */
   function renderEnded() {
@@ -339,36 +342,51 @@ async function boot() {
     if (sm) sm.onclick = () => { if (sel.size) send([...sel].sort().join('')); };
   }
 
-  /* ── 排序題：沿用「排序舉牌」網頁——1–6 色塊拖曳排順序（直式上下排、橫式左右排），按「送出」；送出後不能改 ── */
-  const sortOrders = new Map();   // 每題學生排到一半的順序
-  const sortOrder = (round) => {
-    if (!sortOrders.has(round)) sortOrders.set(round, Array.from({ length: SORT_N }, (_, i) => String(i + 1)).join(''));
-    return sortOrders.get(round);
-  };
+  /* ── 排序題：沿用「排序舉牌」網頁——1–6 色塊拖曳排順序（直式上下排、橫式左右排），
+        右上角 ✖ 移除不要的選項，「上一步／下一步」復原；按「送出」後不能改 ── */
+  const FULL = Array.from({ length: SORT_N }, (_, i) => String(i + 1)).join('');
+  const sortHist = new Map();     // 每題的排列紀錄 { stack: [順序…], idx }
+  const hist = (round) => { if (!sortHist.has(round)) sortHist.set(round, { stack: [FULL], idx: 0 }); return sortHist.get(round); };
+  const sortOrder = (round) => { const h = hist(round); return h.stack[h.idx]; };
+  function setOrder(round, next) {
+    const h = hist(round);
+    if (next === h.stack[h.idx]) return;
+    h.stack = h.stack.slice(0, h.idx + 1);
+    h.stack.push(next);
+    h.idx++;
+    navigator.vibrate && navigator.vibrate(15);
+  }
   let sortDrag = null;
+  const ICON_UNDO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
+  const ICON_REDO = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 14 5-5-5-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>';
 
   function renderSort() {
     const m = s.meta;
     const mine = s.answer ? s.answer.c : (pending && pending.startsWith(`ans${m.round}:`) ? pending.slice(`ans${m.round}:`.length) : null);
     const canMove = m.state === 'open' && !mine;
     const order = mine || sortOrder(m.round);
+    const h = hist(m.round);
     const key = m.answer && mine ? (String(m.answer).includes(',') ? closestKey(mine, m.answer) : m.answer) : null;
     let status;
     const got = m.answer ? (roundPoints(m, s.roundAnswers, m.answer)[uid] || 0) : 0;
     const keyText = m.answer ? String(m.answer).split(',').join(' 或 ') : '';
     if (m.answer) status = !mine ? `答案是 ${keyText}，你沒有作答` : answerMatches(mine, m.answer) ? `🎉 答對了！+${got}` : `答錯了，答案是 ${keyText}`;
     else if (mine) status = '已送出，等老師公布答案';
-    else if (m.state === 'open') status = '拖曳色塊排好順序，再按「送出」';
+    else if (m.state === 'open') status = '拖曳排序・✖ 移除，再按「送出」';
     else if (m.state === 'locked') status = '時間到';
     else status = `第 ${esc(m.round)} 題・排序題，等老師說開始…`;
     const blocks = order.split('').map((d, i) => {
       const [bg, fg] = SORT_COLORS[d];
       const mark = key ? (key[i] === d ? ' ok' : ' ng') : '';
-      return `<div class="sort-blk${mark}${canMove ? '' : ' fixed'}" data-d="${d}" style="background:${bg};color:${fg}"><span>${d}</span></div>`;
-    }).join('');
+      return `<div class="sort-blk${mark}${canMove ? '' : ' fixed'}" data-d="${d}" style="background:${bg};color:${fg}"><span class="sort-num">${d}</span>${canMove ? `<button class="sort-x" data-x="${d}" aria-label="移除 ${d}">✖</button>` : ''}</div>`;
+    }).join('') || '<div class="sort-empty">選項都移除了，按「上一步」或「重排」</div>';
     const html = `${header()}<div class="status">${status}</div>
-      <div class="sort-grid" id="sortGrid" style="--n:${SORT_N}">${blocks}</div>
-      ${canMove ? '<div class="sort-acts"><button class="btn" id="sortReset">重排</button><button class="btn btn-yellow big" id="sortSend">送出</button></div>' : ''}`;
+      <div class="sort-grid" id="sortGrid">${blocks}</div>
+      ${canMove ? `<div class="sort-acts">
+        <button class="btn sort-ico" id="sortUndo" title="上一步" aria-label="上一步" ${h.idx > 0 ? '' : 'disabled'}>${ICON_UNDO}</button>
+        <button class="btn sort-ico" id="sortRedo" title="下一步" aria-label="下一步" ${h.idx < h.stack.length - 1 ? '' : 'disabled'}>${ICON_REDO}</button>
+        <button class="btn" id="sortReset" ${order === FULL ? 'disabled' : ''}>重排</button>
+        <button class="btn btn-yellow big" id="sortSend" ${order ? '' : 'disabled'}>送出</button></div>` : ''}`;
     if (sortDrag) return;              // 拖曳中不重畫，放開後再畫
     if (main._html === html) return;
     main._html = html; main.innerHTML = html;
@@ -376,9 +394,16 @@ async function boot() {
     if (!canMove) return;
     const grid = $('#sortGrid');
     grid.querySelectorAll('.sort-blk').forEach((b) => sortEnableDrag(b, grid, m.round));
-    $('#sortReset').onclick = () => { sortOrders.delete(m.round); render(); };
+    grid.querySelectorAll('.sort-x').forEach((x) => {
+      x.addEventListener('pointerdown', (e) => e.stopPropagation());
+      x.onclick = (e) => { e.stopPropagation(); setOrder(m.round, sortOrder(m.round).replace(x.dataset.x, '')); render(); };
+    });
+    $('#sortUndo').onclick = () => { if (h.idx > 0) { h.idx--; render(); } };
+    $('#sortRedo').onclick = () => { if (h.idx < h.stack.length - 1) { h.idx++; render(); } };
+    $('#sortReset').onclick = () => { setOrder(m.round, FULL); render(); };
     $('#sortSend').onclick = async () => {
       const c = sortOrder(m.round);
+      if (!c) return;
       pending = `ans${m.round}:${c}`;
       sound.buzz(); navigator.vibrate && navigator.vibrate(40);
       render();
@@ -389,6 +414,7 @@ async function boot() {
   /** 拖曳重排（Pointer Events，同排序舉牌網頁）：拖到別的色塊上就插到它的位置。 */
   function sortEnableDrag(btn, grid, round) {
     btn.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.sort-x')) return;
       sortDrag = btn;
       btn.classList.add('dragging');
       try { btn.setPointerCapture(e.pointerId); } catch {}
@@ -416,21 +442,22 @@ async function boot() {
     sortDrag = null;
     btn.classList.remove('dragging');
     const { grid, round } = btn._sort;
-    const next = [...grid.children].map((b) => b.dataset.d).join('');
-    if (next !== sortOrder(round)) { sortOrders.set(round, next); navigator.vibrate && navigator.vibrate(15); }
+    setOrder(round, [...grid.children].map((b) => b.dataset.d).join(''));
     main._html = null;
     render();
   }
   window.addEventListener('pointerup', sortDragEnd);
   window.addEventListener('pointercancel', sortDragEnd);
-  /** 直式手機上下排、橫式左右排；數字字級跟著色塊大小。 */
+  /** 直式手機上下排、橫式左右排；數字字級跟著色塊大小（盡量放大）。 */
   function sortFit() {
     const grid = $('#sortGrid');
     if (!grid) return;
     grid.classList.toggle('row', window.innerWidth > window.innerHeight);
     grid.querySelectorAll('.sort-blk').forEach((b) => {
-      const sz = Math.min(b.clientWidth, b.clientHeight) * 0.6;
-      if (sz > 0) b.style.fontSize = `${sz}px`;
+      const sz = Math.min(b.clientWidth * 0.62, b.clientHeight * 0.72);
+      if (sz > 0) b.querySelector('.sort-num').style.fontSize = `${sz}px`;
+      const x = b.querySelector('.sort-x');
+      if (x) x.style.fontSize = `${Math.max(14, Math.min(26, Math.min(b.clientWidth, b.clientHeight) * 0.16))}px`;
     });
   }
   window.addEventListener('resize', () => { if (s && isSort(s.meta)) sortFit(); });

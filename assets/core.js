@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=27';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=28';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '27';
+export const APP_VERSION = '28';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -58,14 +58,14 @@ export const QTYPES = { buzz: '搶答', tf: '是非', ab: '選擇 A–B', abcd: 
 export const isChoice = (m) => m.qtype !== 'buzz';
 /** 拼音題：學生選聲母＋韻母＋聲調，答案存成 ts|iah|8（見 spell.js）。 */
 export const isSpell = (m) => m.qtype === 'spell';
-/** 排序題（v27，沿用「排序舉牌」網頁）：學生把 1–6 色塊拖曳排好順序，答案存成 6 碼數字串，例如 315264；全對才給分。
+/** 排序題（v27，沿用「排序舉牌」網頁）：學生把 1–6 色塊拖曳排好順序（v28 起可按 ✖ 移除不要的選項），答案存成 1～6 碼數字串，例如 315264、3152；全對才給分。
     正解可以不只一種：標準答案存成逗號分隔，例如 315264,315246，學生符合其中任一個就算對。 */
 export const isSort = (m) => m.qtype === 'sort';
 export const SORT_N = 6;
 /** 排序舉牌網頁的 1–6 色塊顏色（底色、字色）。 */
 export const SORT_COLORS = { 1: ['#e74c3c', '#fff'], 2: ['#3498db', '#fff'], 3: ['#2ecc71', '#fff'], 4: ['#f1c40f', '#333'], 5: ['#9b59b6', '#fff'], 6: ['#1abc9c', '#fff'] };
-/** 是不是合法的排序答案：1–6 每個數字剛好出現一次。 */
-export const isSortCode = (c) => typeof c === 'string' && c.length === SORT_N && /^[1-6]+$/.test(c) && new Set(c).size === SORT_N;
+/** 是不是合法的排序答案：1～6 個 1–6 的數字、不重複（v28 起可以移除部分選項）。 */
+export const isSortCode = (c) => typeof c === 'string' && c.length >= 1 && c.length <= SORT_N && /^[1-6]+$/.test(c) && new Set(c).size === c.length;
 /** 排序答案的小色塊（mark：與標準答案逐位比對，位置對的打勾樣式、不對的變暗）。 */
 export function sortChipsHTML(c, { key = null, cls = '' } = {}) {
   if (key && String(key).includes(',')) key = closestKey(c, key);

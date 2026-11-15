@@ -475,3 +475,25 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .answer-view.big .sort-chips.big .sc { font-size: clamp(1rem, 2vw, 3rem); }
 .answer-view.big .sort-key.multi .sort-chips.big .sc { font-size: clamp(.9rem, 1.6vw, 2.2rem); }
 .answer-view.big .sort-keyrow .num { font-size: clamp(1rem, 1.6vw, 2rem); white-space: nowrap; }
+
+/* ── v28：排序題響應式（橫式填滿、字放大）＋ ✖ 移除、上一步／下一步 ── */
+.stu.sort-wide { max-width: none; }
+.sort-grid { display: flex; flex-direction: column; align-items: stretch; gap: 8px; flex: 1 1 0; min-height: 0; }
+.sort-grid.row { flex-direction: row; }
+.sort-grid > .sort-blk { flex: 1 1 0; min-width: 0; min-height: 0; }
+.sort-num { line-height: 1; pointer-events: none; }
+.sort-x { position: absolute; top: 6px; right: 6px; width: 2em; height: 2em; padding: 0; border: none; border-radius: 50%;
+  background: rgba(255,255,255,.35); color: #fff; font-size: 18px; line-height: 1; display: grid; place-items: center; cursor: pointer; text-shadow: none; z-index: 3; touch-action: manipulation; }
+.sort-x:active { background: rgba(255,255,255,.6); }
+.sort-blk[data-d="4"] .sort-x { background: rgba(0,0,0,.15); color: #333; }
+.sort-empty { flex: 1; display: grid; place-items: center; border: 2px dashed #555; border-radius: 12px; color: var(--muted); font-weight: 700; text-align: center; padding: 12px; }
+.sort-acts { display: grid; grid-template-columns: 1fr 1fr 1.3fr 2.4fr; gap: 8px; flex-shrink: 0; }
+.sort-acts .btn { min-width: 0; padding-left: 4px; padding-right: 4px; }
+.sort-acts .btn:disabled { opacity: .35; }
+.sort-ico svg { width: 1.6em; height: 1.6em; display: block; margin: auto; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .stu.sort-wide { padding-top: 6px; gap: 6px; }
+  .stu.sort-wide .room-cls { padding: 2px; font-size: .9rem; }
+  .stu.sort-wide .status { font-size: 1rem; min-height: 0; }
+  .stu.sort-wide .sort-acts .btn { padding-top: 6px; padding-bottom: 6px; font-size: 1rem; }
+}

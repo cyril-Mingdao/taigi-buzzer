@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=33">
-<link rel="stylesheet" href="assets/spell.css?v=33">
+<link rel="stylesheet" href="assets/app.css?v=34">
+<link rel="stylesheet" href="assets/spell.css?v=34">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=33';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=34';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
-  patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML,
-} from './assets/teacher.js?v=33';
-import { sound } from './assets/sound.js?v=33';
+  patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML, cleanCap,
+} from './assets/teacher.js?v=34';
+import { sound } from './assets/sound.js?v=34';
 
 const main = $('#main');
 const qrCache = new Map();
@@ -188,12 +188,15 @@ async function picker(fb, user) {
         <ul class="plist">${rooms.map((r) => `<li><span class="who">${r.rid}<small>${new Date(r.createdAt).toLocaleString('zh-TW')}</small></span>
           <button class="btn sm" data-rid="${r.rid}">繼續</button></li>`).join('')}</ul>` : ''}
     </div>`;
+  $('#gCap').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
   $('#fNew').onsubmit = async (e) => {
     e.preventDefault();
     const name = $('#cName').value.trim();
     if (!name) { toast('請輸入班級名稱'); $('#cName').focus(); return; }
     $('#bNew').disabled = true;
-    try { go(await createRoom(fb, user, newRoomId, name, { groupMode: $('#gMode').value, groupCount: $('#gCount').value })); } catch (err) { toast(err.message); $('#bNew').disabled = false; }
+    const cap = cleanCap($('#gCap').value);
+    if (!cap) { toast('每組作答數請輸入 1～99 的數字'); $('#gCap').focus(); return; }
+    try { go(await createRoom(fb, user, newRoomId, name, { groupCap: cap, groupCount: $('#gCount').value })); } catch (err) { toast(err.message); $('#bNew').disabled = false; }
   };
   main.querySelectorAll('[data-rid]').forEach((b) => { b.onclick = () => go(b.dataset.rid); });
 }
@@ -323,7 +326,7 @@ function enterRoom(fb, rid, { owner }) {
                 <button class="btn btn-yellow" data-act="game">進入搶答 ▶</button>
               </div>` : `<span class="badge st-idle">${esc(m.ownerName || '老師')}・等待開始</span>`}
             </div>
-            ${owner ? groupSettingsHTML(m) : `<p class="muted">${esc(GROUP_MODES[m.groupMode] || '')}${m.groupMode === 'none' ? '' : `・${m.groupCount} 組`}</p>`}
+            ${owner ? groupSettingsHTML(m) : `<p class="muted">${m.groupMode === 'cap' ? `每組 ${esc(m.groupCap)} 人作答` : esc(GROUP_MODES[m.groupMode] || '')}${m.groupMode === 'none' ? '' : `・${m.groupCount} 組`}</p>`}
             <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點卡片或「核准」）；滑鼠移到卡片上可改名、移除。' : '虛線卡片＝等待老師核准。'}</p>
             <div class="cards">${list.map(([uid, p]) => `
               <div class="pcard ${p.approved ? '' : 'pending'} ${s.presence[uid] ? '' : 'offline'}" data-uid="${uid}">

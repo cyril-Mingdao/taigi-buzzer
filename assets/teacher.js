@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=33';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=33';
+} from './core.js?v=34';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=34';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -109,22 +109,32 @@ export async function listMyRooms(fb, uid) {
   return rooms.filter((r) => !stale.includes(r)).sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** 建教室時老師選的分組規則與組數（只接受合法值）。 */
-function pickGroupOpts({ groupMode, groupCount } = {}) {
+/** 每組作答數：1～99 的整數，不合法回傳 null。 */
+export const cleanCap = (v) => {
+  const n = Number(String(v ?? '').replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim());
+  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
+};
+/** 建教室時老師輸入的每組作答數與組數（只接受合法值）。 */
+function pickGroupOpts({ groupCap, groupCount } = {}) {
   const o = {};
-  if (groupMode in GROUP_MODES) o.groupMode = groupMode;
+  const c = cleanCap(groupCap);
+  if (c) { o.groupMode = 'cap'; o.groupCap = c; }
   const n = Number(groupCount);
   if (Number.isInteger(n) && n >= 2 && n <= 20) o.groupCount = n;
   return o;
 }
-/** 分組規則＋組數兩個下拉選單（建教室表單、等候畫面、手機遙控「加入」分頁、設定共用）。
-    withAttr＝true 時用 data-set，改了直接寫進教室設定；false 時給建教室表單用 id。 */
+/** 「每組作答數」（老師輸入數字）＋「組數」：建教室表單、等候畫面、手機遙控「加入」分頁、設定共用。
+    withAttr＝true 時用 data-set，改了直接寫進教室設定；false 時給建教室表單用 id。
+    教室若是舊的分組規則（個人賽等），輸入每組作答數後會改成「每組作答數自訂」。 */
 export function groupSettingsHTML(m, { withAttr = true } = {}) {
   const opt = (obj, cur) => Object.entries(obj).map(([v, t]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${t}</option>`).join('');
   const gcs = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [i + 2, `${i + 2} 組`]));
   const a = (set, id) => (withAttr ? `data-set="${set}"` : `id="${id}"`);
+  const cap = groupCap(m);
+  const note = withAttr && !cap ? `<small class="muted">目前：${esc(GROUP_MODES[m.groupMode] || '')}（不限）</small>` : '';
   return `<div class="group-set">
-    <label>分組規則<select ${a('groupMode', 'gMode')}>${opt(GROUP_MODES, m.groupMode)}</select></label>
+    <label>每組作答數<input ${a('groupCap', 'gCap')} type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2"
+      value="${cap || ''}" placeholder="例如 2" autocomplete="off">${note}</label>
     <label>組數<select ${a('groupCount', 'gCount')} data-num>${opt(gcs, m.groupCount)}</select></label></div>`;
 }
 
@@ -255,7 +265,7 @@ export function makeActions(fb, rid, getState) {
     approve(uid) {
       const s = getState();
       const g = singleConflict(uid, s);
-      if (g) return toast(`${groupLabel(g)}已經額滿了（一組只限 ${groupCap(s.meta)} 台手機）`);
+      if (g) return toast(`${groupLabel(g)}已經額滿了（每組作答數 ${groupCap(s.meta)}）`);
       return fb.update(r(`/players/${uid}`), { approved: true, score: s.players[uid].score || 0 }).catch((e) => toast(authErrorText(e)));
     },
     async approveAll() {
@@ -329,7 +339,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=33';
+export { qtypeLabel } from './core.js?v=34';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -574,7 +584,7 @@ export function controlsHTML(s) {
   return `
     <div class="ctl-status">第 <b>${esc(m.round)}</b> 題 · <span class="badge st-${m.state}">${stateText(m)}</span>
       <span class="cd" data-cd></span></div>
-    <div class="seg row wrap">${seg}</div>
+    <div class="seg qtype-seg">${seg}</div>
     ${modeSeg}
     <div class="ctl-main">
       ${btn('open', choice ? '▶ 開始作答' : '▶ 開始搶答', 'btn-yellow big', m.state !== 'idle')}
@@ -865,6 +875,10 @@ export function bindControls(root, act, { onCleared } = {}) {
     box.querySelector('[data-spellprev]').innerHTML = pv.html;
     box.querySelector('[data-act="sreveal"]').disabled = !pv.code;
   });
+  root.addEventListener('input', (e) => {
+    const el = e.target.closest('[data-set="groupCap"]');
+    if (el) el.value = el.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2);
+  });
   root.addEventListener('keydown', (e) => {
     const el = e.target.closest('[data-spellin]');
     if (!el || e.key !== 'Enter') return;
@@ -876,6 +890,12 @@ export function bindControls(root, act, { onCleared } = {}) {
     const el = e.target.closest('[data-set]');
     if (!el) return;
     if (el.dataset.set === 'qtype') { act.setQtype(el.value); return; }
+    if (el.dataset.set === 'groupCap') {
+      const c = cleanCap(el.value);
+      if (!c) { toast('每組作答數請輸入 1～99 的數字'); return; }
+      act.setMeta({ groupCap: c, groupMode: 'cap' });
+      return;
+    }
     if (el.dataset.set === 'className') {
       const v = cleanClassName(el.value);
       if (!v) { toast('班級名稱不能空白'); return; }

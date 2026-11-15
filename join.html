@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=33">
-<link rel="stylesheet" href="assets/spell.css?v=33">
+<link rel="stylesheet" href="assets/app.css?v=34">
+<link rel="stylesheet" href="assets/spell.css?v=34">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes, groupCap, groupScored,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=33';
+} from './assets/core.js?v=34';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=33';
-import { sound } from './assets/sound.js?v=33';
+} from './assets/spell.js?v=34';
+import { sound } from './assets/sound.js?v=34';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -185,7 +185,7 @@ async function boot() {
       if (!Number.isInteger(data.group) || data.group < 1 || data.group > maxG) return toast(`組別請輸入 1～${maxG} 的數字`);
       const cap = groupCap(m);
       if (cap && Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group === data.group).length >= cap)
-        return toast(`${groupLabel(data.group)}已經額滿了（一組只限 ${cap} 台手機）`);
+        return toast(`${groupLabel(data.group)}已經額滿了（每組只能 ${cap} 人作答）`);
       saveProfile(data);
       try {
         await fb.update(r(`/players/${uid}`), s.me ? data : { ...data, joinedAt: fb.serverTimestamp() });

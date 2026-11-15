@@ -513,3 +513,13 @@ body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select
 .lobby .group-set select, .settings .group-set select { background: var(--black); color: var(--white); border: 1px solid var(--muted); }
 .new-room .group-set select { border: 2px solid var(--black); background: var(--white); color: var(--black); }
 .settings .group-set { margin: 0; }
+
+/* ── v34：題型按鈕平均分配欄寬（4 欄 × 2 列），字級跟著寬度縮放；每組作答數輸入框 ── */
+.seg.qtype-seg { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; container-type: inline-size; }
+.seg.qtype-seg .btn { width: 100%; min-width: 0; padding-left: 2px; padding-right: 2px; white-space: nowrap; overflow: hidden; font-size: min(1.05rem, 4.6cqi); }
+.group-set input { padding: 8px 10px; border-radius: 10px; font-size: 1rem; width: 100%; }
+.lobby .group-set input, .settings .group-set input { background: var(--black); color: var(--white); border: 1px solid var(--muted); }
+.new-room .group-set input { border: 2px solid var(--black); }
+.group-set small { font-weight: 400; }
+/* 電腦版 body.fit 的控制區字級規則會蓋過上面那條，這裡強制以按鈕寬度縮放 */
+.seg.qtype-seg .btn { font-size: min(1.05rem, 4.1cqi) !important; padding-left: 1px !important; padding-right: 1px !important; letter-spacing: 0; }

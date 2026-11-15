@@ -6,6 +6,7 @@
     "buzzLive/{rid}：公開房間清單摘要（老師名、人數、階段），任何登入者（含匿名的投影頁）可讀，只有房主可寫。",
     "v07：meta.className／buzzLive.className＝老師建房時輸入的班級名稱（成績檔名用）。",
     "v21：qtype spell＝拼音題；學生答案／標準答案存成「聲母|韻母|調」，例如 ts|iah|8（無聲母 |a|1），answers.c、meta.answer、keys 放寬接受此格式。",
+    "v34：groupMode 新增 cap＋meta.groupCap（每組作答數 1～99，老師輸入，預設 2）。",
     "v33：groupMode 新增 double＝一組只限兩台手機（預設），預設 8 組。",
     "v28：排序題可移除部分選項，answers.c 放寬為 1～6 碼，meta.answer／keys 每個正解 1～6 碼。",
     "v27：qtype sort＝排序題（1–6）；學生答案存 6 碼數字如 315264（answers.c），標準答案可多個正解、逗號分隔如 315264,315246（meta.answer、keys）。",
@@ -59,7 +60,10 @@
             ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 60"
           },
           "groupMode": {
-            ".validate": "newData.isString() && newData.val().matches(/^(none|first|each|single|double)$/)"
+            ".validate": "newData.isString() && newData.val().matches(/^(none|first|each|single|double|cap)$/)"
+          },
+          "groupCap": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 99"
           },
           "groupCount": {
             ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 20"

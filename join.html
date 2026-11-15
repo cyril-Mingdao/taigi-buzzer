@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=35">
-<link rel="stylesheet" href="assets/spell.css?v=35">
+<link rel="stylesheet" href="assets/app.css?v=36">
+<link rel="stylesheet" href="assets/spell.css?v=36">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes, groupCap, groupScored,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=35';
+} from './assets/core.js?v=36';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=35';
-import { sound } from './assets/sound.js?v=35';
+} from './assets/spell.js?v=36';
+import { sound } from './assets/sound.js?v=36';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -39,6 +39,8 @@ const params = new URL(location.href).searchParams;
 const slot = (params.get('slot') || '').replace(/\W/g, '').slice(0, 8);
 const LS = `buzz.profile${slot ? `.${slot}` : ''}`;
 const loadProfile = () => { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { return {}; } };
+/** v36：「5號 王小明」→ { seat: '5', name: '王小明' }；舊資料沒有座號就整串當姓名。 */
+const splitSeat = (full) => { const mt = /^(\d{1,2})號 (.+)$/.exec(String(full || '')); return mt ? { seat: mt[1], name: mt[2] } : { seat: '', name: String(full || '') }; };
 const saveProfile = (p) => { try { localStorage.setItem(LS, JSON.stringify(p)); } catch {} };
 
 let rid = normalizeRoom(params.get('room'));
@@ -156,6 +158,8 @@ async function boot() {
     if (document.activeElement && main.contains(document.activeElement) && $('#jf')) return; // 填寫中不重繪
     const m = s.meta;
     const p = s.me || loadProfile();
+    // v36：座號併進姓名欄存成「5號 王小明」（不改 Firebase 規則）；編輯時拆回座號與姓名
+    const sp = splitSeat(p.name);
     // v32：組別讓學生直接輸入阿拉伯數字（1～20），投影頁一律顯示成「第 X 組」；個人賽的組別只記錄與顯示，不影響計分
     const groupSel = `
       <label>組別<input id="grp" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" required
@@ -166,18 +170,23 @@ async function boot() {
         <form id="jf">
           <label>班級<select id="cls" required>${classOptions(p.cls)}</select></label>
           ${groupSel}
-          <label>${m.groupMode === 'none' ? '姓名' : '姓名／暱稱'}<input id="nm" maxlength="20" required value="${esc(p.name || '')}" autocomplete="off"></label>
+          <label>座號<input id="seat" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" required
+            value="${esc(sp.seat)}" placeholder="輸入數字" autocomplete="off"></label>
+          <label>姓名<input id="nm" maxlength="15" required value="${esc(sp.name)}" autocomplete="off"></label>
           <button class="btn btn-yellow big">${s.me ? '更新資料' : '加入'}</button>
           ${s.me ? '<button type="button" class="btn" id="cancel">取消</button>' : ''}
         </form>
       </div>`;
-    $('#grp').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
+    for (const id of ['#grp', '#seat']) $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
     if ($('#cancel')) $('#cancel').onclick = () => { editing = false; render(); };
     $('#jf').onsubmit = async (e) => {
       e.preventDefault();
+      const seat = Number(String($('#seat').value).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim()) || 0;
+      const nm = $('#nm').value.trim().slice(0, 15);
+      if (!Number.isInteger(seat) || seat < 1 || seat > 99) return toast('座號請輸入 1～99 的數字');
       const data = {
         cls: $('#cls').value,
-        name: $('#nm').value.trim().slice(0, 20),
+        name: nm ? `${seat}號 ${nm}` : '',
         group: Number(String($('#grp').value).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim()) || 0,
       };
       if (!data.cls || !data.name) return toast('請選班級並填姓名');

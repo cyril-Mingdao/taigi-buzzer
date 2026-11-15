@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=28">
-<link rel="stylesheet" href="assets/spell.css?v=28">
+<link rel="stylesheet" href="assets/app.css?v=29">
+<link rel="stylesheet" href="assets/spell.css?v=29">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=28';
+} from './assets/core.js?v=29';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=28';
-import { sound } from './assets/sound.js?v=28';
+} from './assets/spell.js?v=29';
+import { sound } from './assets/sound.js?v=29';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -372,7 +372,7 @@ async function boot() {
     const keyText = m.answer ? String(m.answer).split(',').join(' 或 ') : '';
     if (m.answer) status = !mine ? `答案是 ${keyText}，你沒有作答` : answerMatches(mine, m.answer) ? `🎉 答對了！+${got}` : `答錯了，答案是 ${keyText}`;
     else if (mine) status = '已送出，等老師公布答案';
-    else if (m.state === 'open') status = '拖曳排序・✖ 移除，再按「送出」';
+    else if (m.state === 'open') status = '按住拖到任何位置・✖ 移除・按送出';
     else if (m.state === 'locked') status = '時間到';
     else status = `第 ${esc(m.round)} 題・排序題，等老師說開始…`;
     const blocks = order.split('').map((d, i) => {
@@ -411,41 +411,57 @@ async function boot() {
       catch { pending = null; toast('送出失敗（可能已鎖定）'); render(); }
     };
   }
-  /** 拖曳重排（Pointer Events，同排序舉牌網頁）：拖到別的色塊上就插到它的位置。 */
+  /** 自由拖曳（v29）：按住色塊（手指或滑鼠）後，色塊會跟著移動，原位變成虛線空位；
+      移到哪裡，空位就跑到哪裡（依手指位置和各色塊中線判斷），放開就插在空位。 */
   function sortEnableDrag(btn, grid, round) {
-    btn.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('.sort-x')) return;
-      sortDrag = btn;
-      btn.classList.add('dragging');
-      try { btn.setPointerCapture(e.pointerId); } catch {}
-    });
-    btn.addEventListener('pointermove', (e) => {
-      if (sortDrag !== btn) return;
-      btn.style.pointerEvents = 'none';
-      const below = document.elementFromPoint(e.clientX, e.clientY);
-      btn.style.pointerEvents = '';
-      const target = below && below.closest('.sort-blk');
-      if (!target || target === btn || target.parentNode !== grid) return;
-      const kids = [...grid.children];
-      if (kids.indexOf(btn) < kids.indexOf(target)) grid.insertBefore(btn, target.nextSibling);
-      else grid.insertBefore(btn, target);
-    });
-    btn.addEventListener('pointerup', sortDragEnd);
-    btn.addEventListener('pointercancel', sortDragEnd);
-    btn.addEventListener('lostpointercapture', sortDragEnd);
     btn._sort = { grid, round };
+    btn.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.sort-x') || sortDrag) return;
+      if (e.button != null && e.button > 0) return;     // 只接受左鍵／手指
+      e.preventDefault();
+      const r = btn.getBoundingClientRect();
+      const ghost = btn.cloneNode(true);
+      ghost.querySelector('.sort-x')?.remove();
+      ghost.classList.add('sort-ghost');
+      Object.assign(ghost.style, { width: `${r.width}px`, height: `${r.height}px`, left: `${r.left}px`, top: `${r.top}px` });
+      document.body.appendChild(ghost);
+      btn.classList.add('placeholder');
+      sortDrag = { btn, ghost, dx: e.clientX - r.left, dy: e.clientY - r.top, id: e.pointerId };
+      try { btn.setPointerCapture(e.pointerId); } catch {}
+      navigator.vibrate && navigator.vibrate(20);
+    });
+  }
+  /** 拖曳中：色塊跟著指標走，並把空位移到最接近的位置。 */
+  function sortDragMove(e) {
+    if (!sortDrag || (sortDrag.id != null && e.pointerId !== sortDrag.id)) return;
+    e.preventDefault();
+    const { btn, ghost, dx, dy } = sortDrag;
+    ghost.style.left = `${e.clientX - dx}px`;
+    ghost.style.top = `${e.clientY - dy}px`;
+    const { grid } = btn._sort;
+    const row = getComputedStyle(grid).flexDirection === 'row';   // 依實際排版判斷左右或上下
+    const others = [...grid.children].filter((b) => b !== btn && b.classList.contains('sort-blk'));
+    const pos = row ? e.clientX : e.clientY;
+    let before = null;
+    for (const b of others) {
+      const r = b.getBoundingClientRect();
+      if (pos < (row ? r.left + r.width / 2 : r.top + r.height / 2)) { before = b; break; }
+    }
+    if (before ? btn.nextElementSibling !== before : grid.lastElementChild !== btn) grid.insertBefore(btn, before);
   }
   /** 放開：記下新順序再重畫。手指移出色塊或瀏覽器沒送 pointerup 時，由 window 的監聽補上，不會卡在拖曳中。 */
-  function sortDragEnd() {
-    const btn = sortDrag;
-    if (!btn) return;
+  function sortDragEnd(e) {
+    if (!sortDrag || (e && sortDrag.id != null && e.pointerId != null && e.pointerId !== sortDrag.id)) return;
+    const { btn, ghost } = sortDrag;
     sortDrag = null;
-    btn.classList.remove('dragging');
+    ghost.remove();
+    btn.classList.remove('placeholder');
     const { grid, round } = btn._sort;
-    setOrder(round, [...grid.children].map((b) => b.dataset.d).join(''));
+    setOrder(round, [...grid.children].filter((b) => b.classList.contains('sort-blk')).map((b) => b.dataset.d).join(''));
     main._html = null;
     render();
   }
+  window.addEventListener('pointermove', sortDragMove, { passive: false });
   window.addEventListener('pointerup', sortDragEnd);
   window.addEventListener('pointercancel', sortDragEnd);
   /** 直式手機上下排、橫式左右排；數字字級跟著色塊大小（盡量放大）。 */

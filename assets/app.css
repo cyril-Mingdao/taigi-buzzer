@@ -497,3 +497,11 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
   .stu.sort-wide .status { font-size: 1rem; min-height: 0; }
   .stu.sort-wide .sort-acts .btn { padding-top: 6px; padding-bottom: 6px; font-size: 1rem; }
 }
+
+/* ── v29：自由拖曳——拿起的色塊跟著手指／游標，原位留虛線空位 ── */
+.sort-blk { cursor: grab; }
+.sort-blk.placeholder { background: transparent !important; border: 3px dashed rgba(255,255,255,.55); box-shadow: none; }
+.sort-blk.placeholder > * { visibility: hidden; }
+.sort-ghost { position: fixed; z-index: 1000; pointer-events: none; margin: 0; cursor: grabbing;
+  transform: scale(1.06) rotate(-2deg); box-shadow: 0 14px 28px rgba(0,0,0,.55); opacity: .95; transition: none; }
+body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select: none; }

@@ -8,9 +8,9 @@ import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
-  CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=32';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=32';
+  groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
+} from './core.js?v=33';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=33';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -109,9 +109,28 @@ export async function listMyRooms(fb, uid) {
   return rooms.filter((r) => !stale.includes(r)).sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** 建教室時老師選的分組規則與組數（只接受合法值）。 */
+function pickGroupOpts({ groupMode, groupCount } = {}) {
+  const o = {};
+  if (groupMode in GROUP_MODES) o.groupMode = groupMode;
+  const n = Number(groupCount);
+  if (Number.isInteger(n) && n >= 2 && n <= 20) o.groupCount = n;
+  return o;
+}
+/** 分組規則＋組數兩個下拉選單（建教室表單、等候畫面、手機遙控「加入」分頁、設定共用）。
+    withAttr＝true 時用 data-set，改了直接寫進教室設定；false 時給建教室表單用 id。 */
+export function groupSettingsHTML(m, { withAttr = true } = {}) {
+  const opt = (obj, cur) => Object.entries(obj).map(([v, t]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${t}</option>`).join('');
+  const gcs = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [i + 2, `${i + 2} 組`]));
+  const a = (set, id) => (withAttr ? `data-set="${set}"` : `id="${id}"`);
+  return `<div class="group-set">
+    <label>分組規則<select ${a('groupMode', 'gMode')}>${opt(GROUP_MODES, m.groupMode)}</select></label>
+    <label>組數<select ${a('groupCount', 'gCount')} data-num>${opt(gcs, m.groupCount)}</select></label></div>`;
+}
+
 export const teacherName = (u) => String((u && (u.displayName || u.email)) || '老師').slice(0, 40);
 
-export async function createRoom(fb, user, newRoomId, className) {
+export async function createRoom(fb, user, newRoomId, className, opts = {}) {
   const uid = user.uid;
   const ownerName = teacherName(user);
   className = cleanClassName(className);
@@ -120,7 +139,7 @@ export async function createRoom(fb, user, newRoomId, className) {
     const rid = newRoomId();
     const exists = (await fb.get(fb.ref(fb.db, `buzzRooms/${rid}/meta`))).exists();
     if (exists) continue;
-    await fb.set(fb.ref(fb.db, `buzzRooms/${rid}/meta`), { ...DEFAULT_META, ownerUid: uid, ownerName, className, createdAt: fb.serverTimestamp() });
+    await fb.set(fb.ref(fb.db, `buzzRooms/${rid}/meta`), { ...DEFAULT_META, ...pickGroupOpts(opts), ownerUid: uid, ownerName, className, createdAt: fb.serverTimestamp() });
     await fb.set(fb.ref(fb.db, `buzzOwners/${uid}/${rid}`), Date.now());
     await fb.set(fb.ref(fb.db, `buzzLive/${rid}`), { ownerUid: uid, ownerName, className, createdAt: Date.now(), phase: 'lobby', n: 0 });
     return rid;
@@ -154,12 +173,13 @@ export function makeActions(fb, rid, getState) {
   const r = (p = '') => fb.ref(fb.db, `buzzRooms/${rid}${p}`);
   const meta = (patch) => fb.update(r('/meta'), patch).catch((e) => toast(authErrorText(e)));
 
-  const singleConflict = (uid, s, alsoTaken = new Set()) => {
+  /** 核准會不會超過「一組只限 N 台手機」：回傳額滿的組別，沒問題回傳 null。alsoTaken＝這次批次已核准的 { 組別: 人數 }。 */
+  const singleConflict = (uid, s, alsoTaken = new Map()) => {
     const p = s.players[uid];
-    if (s.meta.groupMode !== 'single' || !p || !p.group) return null;
-    if (alsoTaken.has(p.group)) return p.group;
-    const other = Object.entries(s.players).find(([u, q]) => u !== uid && q.approved && q.group === p.group);
-    return other ? p.group : null;
+    const cap = groupCap(s.meta);
+    if (!cap || !p || !p.group) return null;
+    const n = Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group === p.group).length + (alsoTaken.get(p.group) || 0);
+    return n >= cap ? p.group : null;
   };
 
   return {
@@ -235,17 +255,17 @@ export function makeActions(fb, rid, getState) {
     approve(uid) {
       const s = getState();
       const g = singleConflict(uid, s);
-      if (g) return toast(`${groupLabel(g)}已經有一台手機了（一組只限一台）`);
+      if (g) return toast(`${groupLabel(g)}已經額滿了（一組只限 ${groupCap(s.meta)} 台手機）`);
       return fb.update(r(`/players/${uid}`), { approved: true, score: s.players[uid].score || 0 }).catch((e) => toast(authErrorText(e)));
     },
     async approveAll() {
       const s = getState();
-      const taken = new Set();
+      const taken = new Map();
       const patch = {};
       for (const [uid, p] of Object.entries(s.players)) {
         if (p.approved) continue;
         if (singleConflict(uid, s, taken)) continue;
-        if (p.group) taken.add(p.group);
+        if (p.group) taken.set(p.group, (taken.get(p.group) || 0) + 1);
         patch[`${uid}/approved`] = true;
         patch[`${uid}/score`] = p.score || 0;
       }
@@ -309,7 +329,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=32';
+export { qtypeLabel } from './core.js?v=33';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -329,7 +349,7 @@ export function patch(el, html) {
   }
 }
 
-const grouped = (m) => m.groupMode === 'first' || m.groupMode === 'single';
+const grouped = groupScored;
 const unitHTML = (p, m) => (grouped(m) && p.group
   ? `${groupLabel(p.group)}<small>${esc(playerLabel(p))}</small>`
   : `${esc(playerLabel(p))}${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}`);
@@ -609,8 +629,7 @@ export function settingsHTML(s) {
     <label>偷跑處罰<select data-set="penaltySec" data-num>${opt(PENALTIES, m.penaltySec)}</select></label>
     <label>搶答答錯<select data-set="wrongPts" data-num>${opt({ 0: '不扣分', '-5': '扣 5 分', '-10': '扣 10 分' }, m.wrongPts)}</select></label>
     <label>加入方式<select data-set="joinMode">${opt({ approve: '老師核准', auto: '自動核准' }, m.joinMode)}</select></label>
-    <label>分組規則<select data-set="groupMode">${opt(GROUP_MODES, m.groupMode)}</select></label>
-    <label>組數<select data-set="groupCount" data-num>${opt(gcs, m.groupCount)}</select></label>
+    ${groupSettingsHTML(m)}
     <p class="note">計分：答對 ${CORRECT_PTS} 分；是非／選擇題答對者依交卷先後再加 +5、+4、+3、+2、+1。
       拼音題聲母 ${SPELL_PTS.i}、韻母 ${SPELL_PTS.f}、聲調 ${SPELL_PTS.t} 分分開給分，全對者同樣加速度分。排序題順序全對才給分。</p>
     <div class="row wrap">

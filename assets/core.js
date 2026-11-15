@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=32';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=33';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '32';
+export const APP_VERSION = '33';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -46,8 +46,8 @@ export const DEFAULT_META = {
   round: '1',            // 字串，因為規則裡要跟路徑 $round 比對
   countdownSec: 0,       // 作答／搶答倒數秒數；0 = 不限（老師在設定裡選）
   penaltySec: 3,         // 偷跑鎖幾秒；-1 = 本題不能搶；0 = 不處罰
-  groupMode: 'none',     // none 個人賽｜first 一組只算第一個按的｜each 每人各自計算｜single 一組只限一台手機
-  groupCount: 6,
+  groupMode: 'double',   // none 個人賽｜first 一組只算第一個按的｜each 每人各自計算｜single 一組只限一台手機｜double 一組只限兩台手機（v33 預設）
+  groupCount: 8,         // v33 預設 8 組
   joinMode: 'approve',   // approve 老師核准｜auto 自動核准
   qtype: 'buzz',         // buzz 搶答（比速度，搶到者口頭回答，老師按 ✓／✗）｜tf 是非｜ab 選擇 A–B｜abcd 選擇 A–D｜af 選擇 A–F｜aj 選擇 A–J｜spell 拼音（聲母＋韻母＋聲調）｜sort 排序（1–6 排順序）
   wrongPts: 0,           // 搶答答錯扣幾分（0 或負數）
@@ -124,7 +124,13 @@ export const GROUP_MODES = {
   first: '分組：一組只算第一個按的人',
   each: '分組：每人各自計算',
   single: '分組：一組只限一台手機',
+  double: '分組：一組只限兩台手機',
 };
+/** 一組最多幾台手機（single 1 台、double 2 台；其他模式不限）。 */
+export const GROUP_CAP = { single: 1, double: 2 };
+export const groupCap = (m) => GROUP_CAP[m.groupMode] || 0;
+/** 以「組」為計分與搶答單位的模式：同組只算最早按的一筆、排行榜以組加總。 */
+export const groupScored = (m) => m.groupMode === 'first' || m.groupMode === 'single' || m.groupMode === 'double';
 export const PENALTIES = { 0: '不處罰', 3: '鎖 3 秒', 5: '鎖 5 秒', '-1': '本題不能搶' };
 
 /* ── Firebase ── */
@@ -269,7 +275,7 @@ export function showSetupNeeded(root) {
 }
 
 /**
- * 搶答順序：依伺服器時間排序；分組模式 first/single 時同組只留最早的一筆。
+ * 搶答順序：依伺服器時間排序；分組模式 first/single/double 時同組只留最早的一筆。
  * 回傳 [{ uid, at, player, unit }]，unit 是畫面顯示與計分的單位名稱。
  */
 export function rankBuzzes(buzzes, players, meta) {
@@ -277,7 +283,7 @@ export function rankBuzzes(buzzes, players, meta) {
     .filter(([uid]) => players[uid])       // 被移除的人不列入（也不佔同組名額）
     .map(([uid, b]) => ({ uid, at: b.at, player: players[uid] }))
     .sort((a, b) => a.at - b.at || (a.uid < b.uid ? -1 : 1));
-  const grouped = meta.groupMode === 'first' || meta.groupMode === 'single';
+  const grouped = groupScored(meta);
   const seen = new Set();
   const out = [];
   for (const item of list) {
@@ -293,7 +299,7 @@ export function rankBuzzes(buzzes, players, meta) {
 
 /** 排行榜：分組模式（each 除外）以組加總，其餘以個人計。 */
 export function leaderboard(players, meta) {
-  const byGroup = meta.groupMode === 'first' || meta.groupMode === 'single';
+  const byGroup = groupScored(meta);
   const units = new Map();
   for (const [uid, p] of Object.entries(players || {})) {
     if (!p.approved) continue;

@@ -505,3 +505,11 @@ a.url:hover, a.url:focus-visible { background: var(--yellow); outline: none; }
 .sort-ghost { position: fixed; z-index: 1000; pointer-events: none; margin: 0; cursor: grabbing;
   transform: scale(1.06) rotate(-2deg); box-shadow: 0 14px 28px rgba(0,0,0,.55); opacity: .95; transition: none; }
 body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+
+/* ── v33：分組規則設定（建教室表單、等候畫面、遙控加入分頁） ── */
+.group-set { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; margin: 6px 0 10px; }
+.group-set label { display: grid; gap: 4px; font-weight: 700; }
+.group-set select { padding: 8px 10px; border-radius: 10px; font-size: 1rem; }
+.lobby .group-set select, .settings .group-set select { background: var(--black); color: var(--white); border: 1px solid var(--muted); }
+.new-room .group-set select { border: 2px solid var(--black); background: var(--white); color: var(--black); }
+.settings .group-set { margin: 0; }

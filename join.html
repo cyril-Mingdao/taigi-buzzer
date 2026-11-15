@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=32">
-<link rel="stylesheet" href="assets/spell.css?v=32">
+<link rel="stylesheet" href="assets/app.css?v=33">
+<link rel="stylesheet" href="assets/spell.css?v=33">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -24,14 +24,14 @@
 <script type="module">
 import {
   loadFirebase, authErrorText, showSetupNeeded, normalizeRoom, serverNow, esc, $, toast,
-  DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
+  DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes, groupCap, groupScored,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=32';
+} from './assets/core.js?v=33';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=32';
-import { sound } from './assets/sound.js?v=32';
+} from './assets/spell.js?v=33';
+import { sound } from './assets/sound.js?v=33';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -159,7 +159,7 @@ async function boot() {
     // v32：組別讓學生直接輸入阿拉伯數字（1～20），投影頁一律顯示成「第 X 組」；個人賽的組別只記錄與顯示，不影響計分
     const groupSel = `
       <label>組別<input id="grp" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" required
-        value="${p.group || ''}" placeholder="輸入數字，例如 3" autocomplete="off"></label>`;
+        value="${p.group || ''}" placeholder="輸入數字 1～${m.groupMode === 'none' ? 20 : (m.groupCount || 8)}" autocomplete="off"></label>`;
     main.innerHTML = `
       <div class="card">
         <h2>加入搶答 <small class="muted">${m.className ? `${esc(m.className)}・` : ''}${rid}</small></h2>
@@ -181,9 +181,11 @@ async function boot() {
         group: Number(String($('#grp').value).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim()) || 0,
       };
       if (!data.cls || !data.name) return toast('請選班級並填姓名');
-      if (!Number.isInteger(data.group) || data.group < 1 || data.group > 20) return toast('組別請輸入 1～20 的數字');
-      if (m.groupMode === 'single' && Object.entries(s.players).some(([u, q]) => u !== uid && q.approved && q.group === data.group))
-        return toast(`${groupLabel(data.group)}已經有人了（一組只限一台手機）`);
+      const maxG = m.groupMode === 'none' ? 20 : (m.groupCount || 8);
+      if (!Number.isInteger(data.group) || data.group < 1 || data.group > maxG) return toast(`組別請輸入 1～${maxG} 的數字`);
+      const cap = groupCap(m);
+      if (cap && Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group === data.group).length >= cap)
+        return toast(`${groupLabel(data.group)}已經額滿了（一組只限 ${cap} 台手機）`);
       saveProfile(data);
       try {
         await fb.update(r(`/players/${uid}`), s.me ? data : { ...data, joinedAt: fb.serverTimestamp() });
@@ -228,7 +230,7 @@ async function boot() {
     const rows = leaderboard(s.players, s.meta);
     let rank = 0;
     rows.forEach((u, i) => { if (i === 0 || u.score !== rows[i - 1].score) rank = i + 1; u.rank = rank; });
-    const grouped = (s.meta.groupMode === 'first' || s.meta.groupMode === 'single') && s.me.group;
+    const grouped = groupScored(s.meta) && s.me.group;
     const mine = rows.find((u) => u.key === (grouped ? `g${s.me.group}` : uid));
     const medal = { 1: '🥇 冠軍', 2: '🥈 亞軍', 3: '🥉 季軍' };
     const html = `${header()}<div class="card center">
@@ -240,7 +242,7 @@ async function boot() {
   }
 
   function myRank() {
-    const grouped = (s.meta.groupMode === 'first' || s.meta.groupMode === 'single') && s.me.group;
+    const grouped = groupScored(s.meta) && s.me.group;
     const i = s.ranked.findIndex((it) => it.uid === uid || (grouped && it.player.group === s.me.group));
     return i < 0 ? null : { n: i + 1, mine: s.ranked[i].uid === uid };
   }
@@ -250,7 +252,7 @@ async function boot() {
     let cls = 'ready', label = '準備', status = `第 ${esc(m.round)} 題`, enabled = true;
     const lockLeft = s.foul && m.penaltySec > 0 ? Math.ceil((s.foul.at + m.penaltySec * 1000 - serverNow()) / 1000) : 0;
     const rank = myRank();
-    const groupTaken = rank && !rank.mine; // 同組已有人搶到（first/single 模式）
+    const groupTaken = rank && !rank.mine; // 同組已有人搶到（first/single/double 模式）
 
     if (s.buzz || pending === `buzz${m.round}`) {
       cls = s.judge === 'right' ? 'won' : 'done';

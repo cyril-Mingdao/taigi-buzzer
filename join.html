@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=31">
-<link rel="stylesheet" href="assets/spell.css?v=31">
+<link rel="stylesheet" href="assets/app.css?v=32">
+<link rel="stylesheet" href="assets/spell.css?v=32">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=31';
+} from './assets/core.js?v=32';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=31';
-import { sound } from './assets/sound.js?v=31';
+} from './assets/spell.js?v=32';
+import { sound } from './assets/sound.js?v=32';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -156,35 +156,34 @@ async function boot() {
     if (document.activeElement && main.contains(document.activeElement) && $('#jf')) return; // 填寫中不重繪
     const m = s.meta;
     const p = s.me || loadProfile();
-    const takenGroups = new Set(Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group).map(([, q]) => q.group));
-    // v31：不論個人賽或分組，加入時都要選組別（個人賽的組別只用來記錄與顯示，不影響計分）
+    // v32：組別讓學生直接輸入阿拉伯數字（1～20），投影頁一律顯示成「第 X 組」；個人賽的組別只記錄與顯示，不影響計分
     const groupSel = `
-      <label>組別<select id="grp" required><option value="">請選擇</option>${Array.from({ length: m.groupCount || 6 }, (_, i) => i + 1)
-        .map((g) => {
-          const full = m.groupMode === 'single' && takenGroups.has(g);
-          return `<option value="${g}" ${p.group === g ? 'selected' : ''} ${full ? 'disabled' : ''}>${groupLabel(g)}${full ? '（已有人）' : ''}</option>`;
-        }).join('')}</select></label>`;
+      <label>組別<input id="grp" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" required
+        value="${p.group || ''}" placeholder="輸入數字，例如 3" autocomplete="off"></label>`;
     main.innerHTML = `
       <div class="card">
         <h2>加入搶答 <small class="muted">${m.className ? `${esc(m.className)}・` : ''}${rid}</small></h2>
         <form id="jf">
           <label>班級<select id="cls" required>${classOptions(p.cls)}</select></label>
-          <label>${m.groupMode === 'none' ? '姓名' : '姓名／暱稱'}<input id="nm" maxlength="20" required value="${esc(p.name || '')}" autocomplete="off"></label>
           ${groupSel}
+          <label>${m.groupMode === 'none' ? '姓名' : '姓名／暱稱'}<input id="nm" maxlength="20" required value="${esc(p.name || '')}" autocomplete="off"></label>
           <button class="btn btn-yellow big">${s.me ? '更新資料' : '加入'}</button>
           ${s.me ? '<button type="button" class="btn" id="cancel">取消</button>' : ''}
         </form>
       </div>`;
+    $('#grp').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
     if ($('#cancel')) $('#cancel').onclick = () => { editing = false; render(); };
     $('#jf').onsubmit = async (e) => {
       e.preventDefault();
       const data = {
         cls: $('#cls').value,
         name: $('#nm').value.trim().slice(0, 20),
-        group: $('#grp') ? Number($('#grp').value) || 0 : 0,
+        group: Number(String($('#grp').value).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim()) || 0,
       };
       if (!data.cls || !data.name) return toast('請選班級並填姓名');
-      if (!data.group) return toast('請選組別');
+      if (!Number.isInteger(data.group) || data.group < 1 || data.group > 20) return toast('組別請輸入 1～20 的數字');
+      if (m.groupMode === 'single' && Object.entries(s.players).some(([u, q]) => u !== uid && q.approved && q.group === data.group))
+        return toast(`${groupLabel(data.group)}已經有人了（一組只限一台手機）`);
       saveProfile(data);
       try {
         await fb.update(r(`/players/${uid}`), s.me ? data : { ...data, joinedAt: fb.serverTimestamp() });

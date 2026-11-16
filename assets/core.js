@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=36';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=37';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '36';
+export const APP_VERSION = '37';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -216,6 +216,11 @@ export const cleanClassName = (v) => String(v || '').replace(/[\\/:*?"<>|\r\n]/g
 /** 民國日期，例如 1151014 */
 export const rocDate = (d = new Date()) => `${d.getFullYear() - 1911}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 export const playerLabel = (p) => [p.cls && p.cls !== OTHER_CLASS ? p.cls : '', p.name].filter(Boolean).join(' ');
+/** v37：從「5號 王小明」取出座號（沒有座號回傳 Infinity，排在最後）。 */
+export const seatOf = (p) => { const mt = /^(\d{1,2})號 /.exec(String(p?.name || '')); return mt ? Number(mt[1]) : Infinity; };
+/** v37：依 組別 → 座號 → 加入時間 排序（沒有組別的排最後）。用在 [uid, player] 陣列。 */
+export const byGroupSeat = (a, b) => (Number(a[1].group) || Infinity) - (Number(b[1].group) || Infinity)
+  || seatOf(a[1]) - seatOf(b[1]) || (a[1].joinedAt || 0) - (b[1].joinedAt || 0);
 
 export function toast(msg, ms = 2600) {
   let box = $('#toast');
@@ -309,8 +314,10 @@ export function leaderboard(players, meta) {
     const name = byGroup && p.group ? groupLabel(p.group) : playerLabel(p);
     const u = units.get(key) || { key, name, score: 0, members: [] };
     u.score += p.score || 0;
-    u.members.push(p.name);
+    u.members.push(p);
     units.set(key, u);
   }
+  // v37：成員依座號排序，存成「5號 王小明」字串供名次顯示
+  for (const u of units.values()) u.members = u.members.sort((a, b) => seatOf(a) - seatOf(b)).map((p) => p.name);
   return [...units.values()].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, 'zh-Hant'));
 }

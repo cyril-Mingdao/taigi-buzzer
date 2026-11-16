@@ -6,11 +6,11 @@
  */
 import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
-  serverNow, esc, $, toast, ask, playerLabel, groupLabel, rankBuzzes, leaderboard,
+  serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=36';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=36';
+} from './core.js?v=37';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=37';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -339,7 +339,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=36';
+export { qtypeLabel } from './core.js?v=37';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -517,6 +517,10 @@ export function boardHTML(s) {
     <li><span class="rank">${i + 1}</span><span class="who">${esc(u.name)}</span><b>${u.score}</b></li>`).join('')}</ol>`;
 }
 
+/** v37：分組名次下方列出組員「座號 姓名」（個人名次本身已含座號姓名，不重複）。 */
+const membersHTML = (u, cls) => (u.key.startsWith('g') && u.members.length
+  ? `<div class="${cls}">${u.members.map((n) => `<span>${esc(n)}</span>`).join('')}</div>` : '');
+
 /** 活動結束：冠軍、亞軍、季軍頒獎台＋其餘各組（或個人）得分。同分同名次。 */
 export function podiumHTML(s) {
   const rows = leaderboard(s.players, s.meta);
@@ -527,14 +531,14 @@ export function podiumHTML(s) {
   const top = rows.filter((u) => u.rank <= 3);
   const rest = rows.filter((u) => u.rank > 3);
   const col = (u) => `<div class="pod pod-${u.rank}"><div class="pod-medal">${medal[u.rank][0]}</div>
-    <div class="pod-title">${medal[u.rank][1]}</div><div class="pod-name">${esc(u.name)}</div><div class="pod-score">${u.score} 分</div></div>`;
+    <div class="pod-title">${medal[u.rank][1]}</div><div class="pod-name">${esc(u.name)}</div>${membersHTML(u, 'pod-members')}<div class="pod-score">${u.score} 分</div></div>`;
   // 頒獎台排列：亞軍－冠軍－季軍
   const order = [...top.filter((u) => u.rank === 2), ...top.filter((u) => u.rank === 1), ...top.filter((u) => u.rank === 3)];
   return `<div class="ended">
     <h2 class="ended-title">🏆 ${s.meta.className ? `${esc(s.meta.className)} ` : ''}活動結束</h2>
     <div class="podium">${order.map(col).join('')}</div>
     ${rest.length ? `<ol class="board rest">${rest.map((u) => `
-      <li><span class="rank">${u.rank}</span><span class="who">${esc(u.name)}</span><b>${u.score}</b></li>`).join('')}</ol>` : ''}
+      <li><span class="rank">${u.rank}</span><span class="who">${esc(u.name)}${membersHTML(u, 'rest-members')}</span><b>${u.score}</b></li>`).join('')}</ol>` : ''}
   </div>`;
 }
 
@@ -596,7 +600,7 @@ export function controlsHTML(s) {
 }
 
 export function playersHTML(s) {
-  const entries = Object.entries(s.players).sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0));
+  const entries = Object.entries(s.players).sort(byGroupSeat);
   const pending = entries.filter(([, p]) => !p.approved);
   const ok = entries.filter(([, p]) => p.approved);
   // 是非／選擇題作答中或已鎖定：名字後面直接顯示本題選的答案（只有老師手機看得到）

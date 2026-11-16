@@ -523,3 +523,16 @@ body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select
 .group-set small { font-weight: 400; }
 /* 電腦版 body.fit 的控制區字級規則會蓋過上面那條，這裡強制以按鈕寬度縮放 */
 .seg.qtype-seg .btn { font-size: min(1.05rem, 4.1cqi) !important; padding-left: 1px !important; padding-right: 1px !important; letter-spacing: 0; }
+
+/* v37：等候畫面依組別分列 */
+.cards.gcards { flex-direction: column; flex-wrap: nowrap; gap: 8px; }
+.grow { display: flex; align-items: flex-start; gap: 10px; }
+.glabel { flex: 0 0 auto; min-width: 4.6em; background: var(--yellow); color: var(--black); font-weight: 900; border-radius: 8px; padding: 8px 10px; text-align: center; font-size: 1.05rem; }
+.gitems { display: flex; flex-wrap: wrap; gap: 8px; flex: 1; min-width: 0; }
+.gcards .pcard { font-size: 1.15rem; padding: 8px 14px; }
+/* v37：名次下方列出組員座號姓名 */
+.pod-members { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 8px; font-weight: 700; font-size: clamp(.85rem, 2.2vh, 1.15rem); }
+.pod-members span { white-space: nowrap; }
+.rest-members { display: flex; flex-wrap: wrap; gap: 2px 10px; font-weight: 600; font-size: .85em; color: var(--muted); margin-top: 2px; }
+.rest-members span { white-space: nowrap; }
+.board.rest .who { display: block; }

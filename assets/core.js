@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=37';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=38';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '37';
+export const APP_VERSION = '38';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -234,8 +234,9 @@ export function toast(msg, ms = 2600) {
 /**
  * 頁內對話框，取代瀏覽器的 confirm()／prompt()（那種「網站顯示」視窗會被部分瀏覽器封鎖或勾選停用）。
  * 回傳 Promise：確認框 → true/false；有 input 時 → 輸入字串或 null（取消）。
+ * v38：alt＝第三個按鈕文字，按下回傳 'alt'（altDanger 為紅色）。
  */
-export function ask({ title = '', message = '', ok = '確定', cancel = '取消', danger = false, input = null, maxlength = 20 } = {}) {
+export function ask({ title = '', message = '', ok = '確定', cancel = '取消', danger = false, input = null, maxlength = 20, alt = '', altDanger = false } = {}) {
   return new Promise((resolve) => {
     const m = document.createElement('div');
     m.className = 'modal';
@@ -248,6 +249,7 @@ export function ask({ title = '', message = '', ok = '確定', cancel = '取消'
         ${input != null ? `<input class="dlg-input" maxlength="${maxlength}" value="${esc(input)}" autocomplete="off">` : ''}
         <div class="dlg-actions">
           <button class="btn" data-r="0">${esc(cancel)}</button>
+          ${alt ? `<button class="btn ${altDanger ? 'btn-danger' : ''}" data-r="2">${esc(alt)}</button>` : ''}
           <button class="btn ${danger ? 'btn-danger' : 'btn-yellow'}" data-r="1">${esc(ok)}</button>
         </div>
       </div>`;
@@ -262,6 +264,7 @@ export function ask({ title = '', message = '', ok = '確定', cancel = '取消'
     m.addEventListener('click', (e) => {
       if (e.target === m) return no();
       const b = e.target.closest('[data-r]');
+      if (b && b.dataset.r === '2') return done('alt');
       if (b) (b.dataset.r === '1' ? yes : no)();
     });
     document.addEventListener('keydown', onKey, true);

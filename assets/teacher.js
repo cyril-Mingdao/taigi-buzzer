@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=37';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=37';
+} from './core.js?v=38';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=38';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -169,6 +169,7 @@ export function watchRoom(fb, rid, onChange) {
     onChange({
       rid, meta, players,
       presence: v.presence || {},
+      kicked: v.kicked || {},
       buzzes: (v.buzzes || {})[round] || {},
       fouls: (v.fouls || {})[round] || {},
       answers: (v.answers || {})[round] || {},
@@ -184,6 +185,12 @@ export function makeActions(fb, rid, getState) {
   const meta = (patch) => fb.update(r('/meta'), patch).catch((e) => toast(authErrorText(e)));
 
   /** 核准會不會超過「一組只限 N 台手機」：回傳額滿的組別，沒問題回傳 null。alsoTaken＝這次批次已核准的 { 組別: 人數 }。 */
+  // v38：被移除者的分數暫存本機（同一支手機重新加入時補回）
+  const KEEP = `buzz.kept.${rid}`;
+  const kept = () => { try { return JSON.parse(localStorage.getItem(KEEP) || '{}'); } catch { return {}; } };
+  const keepScore = (uid, pts) => { try { const k = kept(); k[uid] = (k[uid] || 0) + pts; localStorage.setItem(KEEP, JSON.stringify(k)); } catch {} };
+  const takeScore = (uid) => { try { const k = kept(); const v = k[uid] || 0; if (v) { delete k[uid]; localStorage.setItem(KEEP, JSON.stringify(k)); } return v; } catch { return 0; } };
+
   const singleConflict = (uid, s, alsoTaken = new Map()) => {
     const p = s.players[uid];
     const cap = groupCap(s.meta);
@@ -266,7 +273,8 @@ export function makeActions(fb, rid, getState) {
       const s = getState();
       const g = singleConflict(uid, s);
       if (g) return toast(`${groupLabel(g)}已經額滿了（每組作答數 ${groupCap(s.meta)}）`);
-      return fb.update(r(`/players/${uid}`), { approved: true, score: s.players[uid].score || 0 }).catch((e) => toast(authErrorText(e)));
+      const back = takeScore(uid);
+      return fb.update(r(`/players/${uid}`), { approved: true, score: (s.players[uid].score || 0) + back }).catch((e) => toast(authErrorText(e)));
     },
     async approveAll() {
       const s = getState();
@@ -277,17 +285,45 @@ export function makeActions(fb, rid, getState) {
         if (singleConflict(uid, s, taken)) continue;
         if (p.group) taken.set(p.group, (taken.get(p.group) || 0) + 1);
         patch[`${uid}/approved`] = true;
-        patch[`${uid}/score`] = p.score || 0;
+        patch[`${uid}/score`] = (p.score || 0) + takeScore(uid);
       }
       if (Object.keys(patch).length) await fb.update(r('/players'), patch).catch((e) => toast(authErrorText(e)));
     },
+    /**
+     * v38：學生手機當機／卡住時，老師按「移除」只刪掉這筆名單（釋放同組名額），
+     * 同一支手機重新整理後可再加入，也可以換另一支手機加入同組；要永久擋掉才選「封鎖」。
+     * 分組計分時，被移除者的分數轉給同組還在的組員（組分不變）；沒有組員就記在本機，
+     * 同一支手機重新加入並在這台裝置核准時補回。
+     */
     async kick(uid) {
-      const p = getState().players[uid];
-      if (!(await ask({
-        title: `移除「${playerLabel(p || {})}」？`, message: '移除後這支手機不能再加入本教室。', ok: '移除', danger: true,
-      }))) return;
-      await fb.set(r(`/kicked/${uid}`), true);
-      await fb.remove(r(`/players/${uid}`));
+      const s = getState();
+      const p = s.players[uid];
+      const pts = (p && p.score) || 0;
+      const mate = pts && p.group && groupScored(s.meta)
+        ? Object.entries(s.players).find(([u, q]) => u !== uid && q.approved && q.group === p.group) : null;
+      const scoreNote = !pts ? '' : mate
+        ? `（${pts} 分會轉給同組的 ${playerLabel(mate[1])}，組分不變）`
+        : `（${pts} 分：同一支手機重新加入時，在這台裝置核准會自動補回）`;
+      const res = await ask({
+        title: `移除「${playerLabel(p || {})}」？`,
+        message: `移除：釋放名額，這支手機重新整理後可以再加入，或換另一支手機加入同組${scoreNote}。封鎖：這支手機不能再加入本教室。`,
+        ok: '移除', alt: '封鎖', altDanger: true,
+      });
+      if (!res) return;
+      try {
+        if (res === 'alt') await fb.set(r(`/kicked/${uid}`), true);
+        if (mate) await fb.update(r(`/players/${mate[0]}`), { score: (mate[1].score || 0) + pts });
+        else if (pts) keepScore(uid, pts);
+        await fb.remove(r(`/players/${uid}`));
+        toast(res === 'alt' ? '已封鎖這支手機' : '已移除，名額已釋放');
+      } catch (e) { toast(authErrorText(e)); }
+    },
+    async unkickAll() {
+      if (!(await ask({ title: '解除封鎖？', message: '被封鎖的手機都可以重新加入本教室。', ok: '解除封鎖' }))) return;
+      // 規則只開放 kicked/$uid 層級寫入，所以逐筆清掉
+      const patch = Object.fromEntries(Object.keys(getState().kicked || {}).map((u) => [`kicked/${u}`, null]));
+      if (!Object.keys(patch).length) return;
+      fb.update(r(), patch).then(() => toast('已解除封鎖')).catch((e) => toast(authErrorText(e)));
     },
     async rename(uid) {
       const p = getState().players[uid];
@@ -339,7 +375,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=37';
+export { qtypeLabel } from './core.js?v=38';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -603,6 +639,7 @@ export function playersHTML(s) {
   const entries = Object.entries(s.players).sort(byGroupSeat);
   const pending = entries.filter(([, p]) => !p.approved);
   const ok = entries.filter(([, p]) => p.approved);
+  const blocked = Object.keys(s.kicked || {}).length;
   // 是非／選擇題作答中或已鎖定：名字後面直接顯示本題選的答案（只有老師手機看得到）
   const showPick = isChoice(s.meta) && s.meta.state !== 'idle' && s.meta.phase !== 'ended';
   const pickTag = (uid) => {
@@ -628,7 +665,9 @@ export function playersHTML(s) {
       ${pending.length ? '<button class="btn sm btn-yellow" data-act="approveAll">全部核准</button>' : ''}</div>
     <ul class="plist">${pending.map(row).join('') || '<li class="muted">沒有</li>'}</ul>
     <h3>已加入（${ok.length}）</h3>
-    <ul class="plist">${ok.map(row).join('') || '<li class="muted">沒有</li>'}</ul>`;
+    <ul class="plist">${ok.map(row).join('') || '<li class="muted">沒有</li>'}</ul>
+    ${blocked ? `<div class="row between"><span class="muted">已封鎖 ${blocked} 支手機</span>
+      <button class="btn sm" data-act="unkickAll">解除封鎖</button></div>` : ''}`;
 }
 
 export function settingsHTML(s) {

@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=37">
-<link rel="stylesheet" href="assets/spell.css?v=37">
+<link rel="stylesheet" href="assets/app.css?v=38">
+<link rel="stylesheet" href="assets/spell.css?v=38">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes, groupCap, groupScored,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=37';
+} from './assets/core.js?v=38';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=37';
-import { sound } from './assets/sound.js?v=37';
+} from './assets/spell.js?v=38';
+import { sound } from './assets/sound.js?v=38';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -102,6 +102,7 @@ async function boot() {
     }
     const meta = { ...DEFAULT_META, ...v.meta };
     const players = v.players || {};
+    const hadMe = !!(s && s.me);
     s = {
       meta, players, me: players[uid] || null,
       kicked: !!(v.kicked || {})[uid],
@@ -112,6 +113,8 @@ async function boot() {
       judge: ((v.judges || {})[meta.round] || {})[uid] || null,
       ranked: rankBuzzes((v.buzzes || {})[meta.round], players, meta),
     };
+    // v38：老師按「移除」（非封鎖）後名額已釋放，這支手機可直接重新加入
+    if (hadMe && !s.me && !s.kicked) { editing = false; toast('老師已將你移出名單，確認資料後按加入即可重新加入', 5000); }
     if (prev.round !== meta.round) pending = null;
     effects();
     render();
@@ -141,7 +144,7 @@ async function boot() {
     // 只有遊戲中的按鈕畫面用 main._html 快取比對；其他畫面切回來時要清掉
     if (!(s.me && s.me.approved && s.meta.phase === 'game' && !editing && !s.kicked
       && (s.meta.groupMode === 'none' || s.me.group))) main._html = null;
-    if (s.kicked) { main.innerHTML = '<div class="card center"><h2>你已被老師移出這個教室</h2></div>'; return; }
+    if (s.kicked) { main.innerHTML = '<div class="card center"><h2>這支手機已被老師封鎖</h2><p>無法加入這個教室，請找老師協助。</p></div>'; return; }
     // 老師中途改成分組模式時，還沒有組別的人要先補選組別
     if (!s.me || editing || (s.meta.groupMode !== 'none' && !s.me.group)) return renderForm();
     if (!s.me.approved) { sortWide(false); return renderPending(); }

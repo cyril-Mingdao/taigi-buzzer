@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=38">
-<link rel="stylesheet" href="assets/spell.css?v=38">
+<link rel="stylesheet" href="assets/app.css?v=39">
+<link rel="stylesheet" href="assets/spell.css?v=39">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=38';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=39';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML, cleanCap,
-} from './assets/teacher.js?v=38';
-import { sound } from './assets/sound.js?v=38';
+} from './assets/teacher.js?v=39';
+import { sound } from './assets/sound.js?v=39';
 
 const main = $('#main');
 /** v37：等候畫面把已排序的 [uid, player] 依組別切成一列一組。 */
@@ -56,6 +56,30 @@ const lobbyGroups = (list) => {
   }
   return out;
 };
+/**
+ * v39：電腦投影的等候畫面——組別與姓名卡片全部塞進一個畫面，不溢出。
+ * 以二分搜尋找出卡片區放得下的最大字級（--gfs，設在 #main 上，重繪 innerHTML 不會掉），
+ * 縮到最小仍放不下才讓卡片區捲動。手機（未鎖 100dvh）維持原本字級、整頁捲動。
+ */
+const GFS_MAX = 26, GFS_MIN = 9;
+let fitBox = null;
+const fitObs = 'ResizeObserver' in window ? new ResizeObserver(() => fitLobby()) : null;
+function fitLobby() {
+  const box = main.querySelector('.gcards');
+  if (!box) return;
+  // 卡片區每次重繪都是新元素；高度變動（字型載入、版面調整）時重新計算
+  if (fitObs && box !== fitBox) { if (fitBox) fitObs.unobserve(fitBox); fitObs.observe(box); fitBox = box; }
+  const fitMode = document.body.classList.contains('fit') && window.matchMedia('(min-width: 901px)').matches;
+  if (!fitMode) { main.style.removeProperty('--gfs'); return; }
+  const fits = (px) => { main.style.setProperty('--gfs', `${px}px`); return box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1; };
+  if (fits(GFS_MAX)) return;
+  let lo = GFS_MIN, hi = GFS_MAX;
+  while (hi - lo > 0.25) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+  fits(lo);
+}
+let fitTimer = 0;
+window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitLobby, 80); });
+if (document.fonts) document.fonts.ready.then(() => fitLobby());
 const qrCache = new Map();
 function qrImg(text) {
   if (!qrCache.has(text)) {
@@ -337,17 +361,18 @@ function enterRoom(fb, rid, { owner }) {
               </div>` : `<span class="badge st-idle">${esc(m.ownerName || '老師')}・等待開始</span>`}
             </div>
             ${owner ? groupSettingsHTML(m) : `<p class="muted">${m.groupMode === 'cap' ? `每組 ${esc(m.groupCap)} 人作答` : esc(GROUP_MODES[m.groupMode] || '')}${m.groupMode === 'none' ? '' : `・${m.groupCount} 組`}</p>`}
-            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點卡片或「核准」）；滑鼠移到卡片上可改名、移除。' : '虛線卡片＝等待老師核准。'}</p>
+            <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點卡片即核准）；滑鼠移到卡片上可核准、改名、移除。' : '虛線卡片＝等待老師核准。'}</p>
             <div class="cards gcards">${lobbyGroups(list).map(([g, rows]) => `
               <div class="grow"><div class="glabel">${g ? esc(groupLabel(g)) : '未分組'}</div><div class="gitems">${rows.map(([uid, p]) => `
               <div class="pcard ${p.approved ? '' : 'pending'} ${s.presence[uid] ? '' : 'offline'}" data-uid="${uid}">
-                ${esc(p.name)}<small>${esc(p.cls || '')}</small>
+                <span class="pc-name">${esc(p.name)}<small>${esc(p.cls || '')}</small></span>
                 ${owner ? `<span class="pc-acts">
                   ${p.approved ? '' : `<button class="btn sm btn-yellow" data-act="approve" data-uid="${uid}">核准</button>`}
                   <button class="btn sm" data-act="rename" data-uid="${uid}">改名</button>
                   <button class="btn sm danger" data-act="kick" data-uid="${uid}">移除</button></span>` : ''}</div>`).join('')}</div></div>`).join('')}</div>
           </div>
         </div>`);
+      fitLobby();
       return;
     }
 

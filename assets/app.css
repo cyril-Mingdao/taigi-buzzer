@@ -536,3 +536,24 @@ body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select
 .rest-members { display: flex; flex-wrap: wrap; gap: 2px 10px; font-weight: 600; font-size: .85em; color: var(--muted); margin-top: 2px; }
 .rest-members span { white-space: nowrap; }
 .board.rest .who { display: block; }
+
+/* ── v39：投影等候畫面，組別與姓名不溢出畫面（字級 --gfs 由 index.html fitLobby() 依剩餘高度計算） ── */
+#main { --gfs: 1.15rem; }
+.gcards { gap: calc(var(--gfs) * .45); }
+.gcards .grow { gap: calc(var(--gfs) * .55); align-items: center; }
+.gcards .glabel { font-size: calc(var(--gfs) * .92); padding: .4em .55em; min-width: 4.4em; border-radius: .45em; }
+.gcards .gitems { gap: calc(var(--gfs) * .45); }
+.gcards .pcard { font-size: var(--gfs); padding: .4em .75em; border-radius: .55em; line-height: 1.25; }
+.gcards .pcard .pc-name { display: block; white-space: nowrap; }
+/* 待核准卡片也跟已核准一樣：按鈕平常收起（點卡片即核准），滑鼠移上去才浮出，卡片大小與學生看到的一致 */
+@media (hover: hover) {
+.gcards .pcard.pending .pc-acts { display: none; }
+.gcards .pcard:hover .pc-acts, .gcards .pcard:focus-within .pc-acts { display: flex; position: absolute; z-index: 2; left: 50%; top: 50%; transform: translate(-50%, -50%); margin: 0; padding: 4px; gap: 4px; background: var(--white); border-radius: 8px; box-shadow: 0 6px 16px rgba(0,0,0,.45); right: auto; bottom: auto; white-space: nowrap; }
+.gcards .pcard .pc-acts .btn { font-size: 13px; padding: 2px 8px; }
+.gcards .pcard.pending .pc-acts .btn:not(.btn-yellow):not(.danger) { border-color: var(--black); color: var(--black); }
+}
+@media (min-width: 901px) {
+  /* 右欄撐滿剩餘高度（原本 align-items:start 讓它長到內容高度，超出畫面被裁掉） */
+  body.fit .lobby > div:last-child { align-self: stretch; overflow: hidden; }
+  body.fit .lobby .cards.gcards { flex: 1; }
+}

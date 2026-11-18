@@ -6,11 +6,11 @@
  */
 import {
   loadFirebase, currentUser, googleSignIn, authErrorText, isTeacherEmail, showSetupNeeded,
-  serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, rankBuzzes, leaderboard,
+  serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, playerSorter, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=40';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=40';
+} from './core.js?v=41';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=41';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -389,7 +389,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=40';
+export { qtypeLabel } from './core.js?v=41';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -650,7 +650,7 @@ export function controlsHTML(s) {
 }
 
 export function playersHTML(s) {
-  const entries = Object.entries(s.players).sort(byGroupSeat);
+  const entries = Object.entries(s.players).sort(playerSorter(s.meta)); // v41：個人模式依座號
   const pending = entries.filter(([, p]) => !p.approved);
   const ok = entries.filter(([, p]) => p.approved);
   const blocked = Object.keys(s.kicked || {}).length;

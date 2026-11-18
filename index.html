@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=40">
-<link rel="stylesheet" href="assets/spell.css?v=40">
+<link rel="stylesheet" href="assets/app.css?v=41">
+<link rel="stylesheet" href="assets/spell.css?v=41">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=40';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, playerSorter, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=41';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML, cleanCap,
-} from './assets/teacher.js?v=40';
-import { sound } from './assets/sound.js?v=40';
+} from './assets/teacher.js?v=41';
+import { sound } from './assets/sound.js?v=41';
 
 const main = $('#main');
 /** v37：等候畫面把已排序的 [uid, player] 依組別切成一列一組。 */
@@ -371,7 +371,7 @@ function enterRoom(fb, rid, { owner }) {
     }
 
     if (m.phase === 'lobby') {
-      const list = Object.entries(s.players).sort(byGroupSeat); // v37：第 1 組排到最後一組，組內依座號
+      const list = Object.entries(s.players).sort(playerSorter(m)); // v41：個人模式只依座號； // v37：第 1 組排到最後一組，組內依座號
       const ok = list.filter(([, p]) => p.approved).length;
       const pend = list.length - ok;
       patch(main, `

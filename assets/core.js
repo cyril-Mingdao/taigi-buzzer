@@ -9,11 +9,11 @@
  *     學生頁用獨立的 Firebase app 名稱，才不會跟同一台電腦上的教師登入狀態互相覆蓋。
  */
 
-import { spellPoints, spellText, isSpellCode } from './spell.js?v=40';
+import { spellPoints, spellText, isSpellCode } from './spell.js?v=41';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.5';
 /** 網站版本：改版時連同各頁 import 的 ?v= 一起調高，手機才不會讀到快取舊檔 */
-export const APP_VERSION = '40';
+export const APP_VERSION = '41';
 
 export const TEACHERS = [
   'cyril@ms.mingdao.edu.tw',
@@ -221,6 +221,9 @@ export const seatOf = (p) => { const mt = /^(\d{1,2})號 /.exec(String(p?.name |
 /** v37：依 組別 → 座號 → 加入時間 排序（沒有組別的排最後）。用在 [uid, player] 陣列。 */
 export const byGroupSeat = (a, b) => (Number(a[1].group) || Infinity) - (Number(b[1].group) || Infinity)
   || seatOf(a[1]) - seatOf(b[1]) || (a[1].joinedAt || 0) - (b[1].joinedAt || 0);
+/** v41：個人模式（不分組）只依 座號 → 加入時間 排序；分組時用 byGroupSeat。 */
+export const bySeat = (a, b) => seatOf(a[1]) - seatOf(b[1]) || (a[1].joinedAt || 0) - (b[1].joinedAt || 0);
+export const playerSorter = (m) => (m && m.groupMode === 'none' ? bySeat : byGroupSeat);
 
 export function toast(msg, ms = 2600) {
   let box = $('#toast');

@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=39">
-<link rel="stylesheet" href="assets/spell.css?v=39">
+<link rel="stylesheet" href="assets/app.css?v=40">
+<link rel="stylesheet" href="assets/spell.css?v=40">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=39';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=40';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML, cleanCap,
-} from './assets/teacher.js?v=39';
-import { sound } from './assets/sound.js?v=39';
+} from './assets/teacher.js?v=40';
+import { sound } from './assets/sound.js?v=40';
 
 const main = $('#main');
 /** v37：等候畫面把已排序的 [uid, player] 依組別切成一列一組。 */
@@ -61,21 +61,40 @@ const lobbyGroups = (list) => {
  * 以二分搜尋找出卡片區放得下的最大字級（--gfs，設在 #main 上，重繪 innerHTML 不會掉），
  * 縮到最小仍放不下才讓卡片區捲動。手機（未鎖 100dvh）維持原本字級、整頁捲動。
  */
-const GFS_MAX = 26, GFS_MIN = 9;
+const GFS_MAX = 40, GFS_MIN = 9;
 let fitBox = null;
 const fitObs = 'ResizeObserver' in window ? new ResizeObserver(() => fitLobby()) : null;
+/**
+ * v40：卡片區改成多欄（CSS columns＋column-fill:auto）：先把左欄排滿，滿了才往右欄排。
+ * 依序試 1～N 欄，每種欄數用二分搜尋找最大字級；取字級最大者（同字級取欄數少的），畫面不大量留白。
+ */
 function fitLobby() {
   const box = main.querySelector('.gcards');
   if (!box) return;
-  // 卡片區每次重繪都是新元素；高度變動（字型載入、版面調整）時重新計算
   if (fitObs && box !== fitBox) { if (fitBox) fitObs.unobserve(fitBox); fitObs.observe(box); fitBox = box; }
   const fitMode = document.body.classList.contains('fit') && window.matchMedia('(min-width: 901px)').matches;
-  if (!fitMode) { main.style.removeProperty('--gfs'); return; }
-  const fits = (px) => { main.style.setProperty('--gfs', `${px}px`); return box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1; };
-  if (fits(GFS_MAX)) return;
-  let lo = GFS_MIN, hi = GFS_MAX;
-  while (hi - lo > 0.25) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
-  fits(lo);
+  if (!fitMode) { main.style.removeProperty('--gfs'); main.style.removeProperty('--gcols'); return; }
+  // 多欄時卡片寬度受欄寬限制，姓名不可被截斷：每張卡片內容也要放得下
+  const cardsOk = () => [...box.querySelectorAll('.pcard .pc-name')].every((n) => n.scrollWidth <= n.clientWidth + 1);
+  const fits = (px) => { main.style.setProperty('--gfs', `${px}px`); return box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1 && cardsOk(); };
+  const best = (cols) => {
+    main.style.setProperty('--gcols', cols);
+    if (fits(GFS_MAX)) return GFS_MAX;
+    if (!fits(GFS_MIN)) return 0;
+    let lo = GFS_MIN, hi = GFS_MAX;
+    while (hi - lo > 0.25) { const mid = (lo + hi) / 2; if (fits(mid)) lo = mid; else hi = mid; }
+    return lo;
+  };
+  const maxCols = box.classList.contains('solo') ? 6 : 4;
+  let pick = 1, pickFs = -1;
+  for (let c = 1; c <= maxCols; c++) {
+    const fs = best(c);
+    if (fs > pickFs + 0.5) { pick = c; pickFs = fs; }
+    if (fs >= GFS_MAX) break;
+  }
+  main.style.setProperty('--gcols', pick);
+  fits(pickFs > 0 ? pickFs : GFS_MIN);
+  box.style.overflow = pickFs > 0 ? '' : 'auto'; // 縮到最小仍放不下才出現捲軸
 }
 let fitTimer = 0;
 window.addEventListener('resize', () => { clearTimeout(fitTimer); fitTimer = setTimeout(fitLobby, 80); });
@@ -222,6 +241,13 @@ async function picker(fb, user) {
         <ul class="plist">${rooms.map((r) => `<li><span class="who">${r.rid}<small>${new Date(r.createdAt).toLocaleString('zh-TW')}</small></span>
           <button class="btn sm" data-rid="${r.rid}">繼續</button></li>`).join('')}</ul>` : ''}
     </div>`;
+  // v40：組別選「個人」時，數字框改成「作答人數上限」預設 50；切回分組回到每組 2 人
+  $('#gCount').addEventListener('change', (e) => {
+    const solo = e.target.value === 'solo';
+    $('#fNew [data-caplabel]').textContent = solo ? '作答人數上限' : '每組作答數';
+    $('#gCap').value = solo ? 50 : 2;
+    $('#gCap').placeholder = `例如 ${solo ? 50 : 2}`;
+  });
   $('#gCap').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
   $('#fNew').onsubmit = async (e) => {
     e.preventDefault();
@@ -229,7 +255,7 @@ async function picker(fb, user) {
     if (!name) { toast('請輸入班級名稱'); $('#cName').focus(); return; }
     $('#bNew').disabled = true;
     const cap = cleanCap($('#gCap').value);
-    if (!cap) { toast('每組作答數請輸入 1～99 的數字'); $('#gCap').focus(); return; }
+    if (!cap) { toast(`${$('#gCount').value === 'solo' ? '作答人數上限' : '每組作答數'}請輸入 1～99 的數字`); $('#gCap').focus(); $('#bNew').disabled = false; return; }
     try { go(await createRoom(fb, user, newRoomId, name, { groupCap: cap, groupCount: $('#gCount').value })); } catch (err) { toast(err.message); $('#bNew').disabled = false; }
   };
   main.querySelectorAll('[data-rid]').forEach((b) => { b.onclick = () => go(b.dataset.rid); });
@@ -360,10 +386,10 @@ function enterRoom(fb, rid, { owner }) {
                 <button class="btn btn-yellow" data-act="game">進入搶答 ▶</button>
               </div>` : `<span class="badge st-idle">${esc(m.ownerName || '老師')}・等待開始</span>`}
             </div>
-            ${owner ? groupSettingsHTML(m) : `<p class="muted">${m.groupMode === 'cap' ? `每組 ${esc(m.groupCap)} 人作答` : esc(GROUP_MODES[m.groupMode] || '')}${m.groupMode === 'none' ? '' : `・${m.groupCount} 組`}</p>`}
+            ${owner ? groupSettingsHTML(m) : `<p class="muted">${m.groupMode === 'none' ? `個人作答・上限 ${esc(m.groupCap || 50)} 人` : m.groupMode === 'cap' ? `每組 ${esc(m.groupCap)} 人作答` : esc(GROUP_MODES[m.groupMode] || '')}${m.groupMode === 'none' ? '' : `・${m.groupCount} 組`}</p>`}
             <p class="muted">手機掃描 QR code，電腦直接點 QR 下方的網址加入。${owner ? '虛線卡片＝待核准（點卡片即核准）；滑鼠移到卡片上可核准、改名、移除。' : '虛線卡片＝等待老師核准。'}</p>
-            <div class="cards gcards">${lobbyGroups(list).map(([g, rows]) => `
-              <div class="grow"><div class="glabel">${g ? esc(groupLabel(g)) : '未分組'}</div><div class="gitems">${rows.map(([uid, p]) => `
+            <div class="cards gcards${m.groupMode === 'none' ? ' solo' : ''}">${(m.groupMode === 'none' ? [[0, list]] : lobbyGroups(list)).map(([g, rows]) => `
+              <div class="grow">${m.groupMode === 'none' ? '' : `<div class="glabel">${g ? esc(groupLabel(g)) : '未分組'}</div>`}<div class="gitems">${rows.map(([uid, p]) => `
               <div class="pcard ${p.approved ? '' : 'pending'} ${s.presence[uid] ? '' : 'offline'}" data-uid="${uid}">
                 <span class="pc-name">${esc(p.name)}<small>${esc(p.cls || '')}</small></span>
                 ${owner ? `<span class="pc-acts">

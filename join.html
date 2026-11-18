@@ -15,8 +15,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>學生模式</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=39">
-<link rel="stylesheet" href="assets/spell.css?v=39">
+<link rel="stylesheet" href="assets/app.css?v=40">
+<link rel="stylesheet" href="assets/spell.css?v=40">
 </head>
 <body>
 <main class="stu" id="main"><p class="muted center">載入中…</p></main>
@@ -27,11 +27,11 @@ import {
   DEPARTMENTS, OTHER_CLASS, DEFAULT_META, groupLabel, rankBuzzes, groupCap, groupScored,
   optionList, optionText, isChoice, isMulti, isSpell, choicePoints, roundPoints, leaderboard, CORRECT_PTS,
   isSort, SORT_N, SORT_COLORS, answerMatches, closestKey,
-} from './assets/core.js?v=39';
+} from './assets/core.js?v=40';
 import {
   INITIAL_ROWS, FINAL_TABS, TONES, GROUP_COLORS, initialCat, finalCat, toneFinal, encode, decode, spellText, spellParts,
-} from './assets/spell.js?v=39';
-import { sound } from './assets/sound.js?v=39';
+} from './assets/spell.js?v=40';
+import { sound } from './assets/sound.js?v=40';
 
 const main = $('#main');
 const params = new URL(location.href).searchParams;
@@ -164,7 +164,8 @@ async function boot() {
     // v36：座號併進姓名欄存成「5號 王小明」（不改 Firebase 規則）；編輯時拆回座號與姓名
     const sp = splitSeat(p.name);
     // v32：組別讓學生直接輸入阿拉伯數字（1～20），投影頁一律顯示成「第 X 組」；個人賽的組別只記錄與顯示，不影響計分
-    const groupSel = `
+    const solo = m.groupMode === 'none'; // v40：「個人」模式不用填組別
+    const groupSel = solo ? '' : `
       <label>組別<input id="grp" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2" required
         value="${p.group || ''}" placeholder="輸入數字 1～${m.groupMode === 'none' ? 20 : (m.groupCount || 8)}" autocomplete="off"></label>`;
     main.innerHTML = `
@@ -180,7 +181,7 @@ async function boot() {
           ${s.me ? '<button type="button" class="btn" id="cancel">取消</button>' : ''}
         </form>
       </div>`;
-    for (const id of ['#grp', '#seat']) $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
+    for (const id of ['#grp', '#seat']) if ($(id)) $(id).addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\D/g, '').slice(0, 2); });
     if ($('#cancel')) $('#cancel').onclick = () => { editing = false; render(); };
     $('#jf').onsubmit = async (e) => {
       e.preventDefault();
@@ -190,13 +191,17 @@ async function boot() {
       const data = {
         cls: $('#cls').value,
         name: nm ? `${seat}號 ${nm}` : '',
-        group: Number(String($('#grp').value).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim()) || 0,
+        group: solo ? 0 : Number(String($('#grp').value).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim()) || 0,
       };
       if (!data.cls || !data.name) return toast('請選班級並填姓名');
-      const maxG = m.groupMode === 'none' ? 20 : (m.groupCount || 8);
-      if (!Number.isInteger(data.group) || data.group < 1 || data.group > maxG) return toast(`組別請輸入 1～${maxG} 的數字`);
+      const maxG = m.groupCount || 8;
+      if (solo) {
+        const sc = Math.max(1, Number(m.groupCap) || 50);
+        if (!(s.me && s.me.approved) && Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved).length >= sc)
+          return toast(`已經額滿了（作答人數上限 ${sc} 人）`);
+      } else if (!Number.isInteger(data.group) || data.group < 1 || data.group > maxG) return toast(`組別請輸入 1～${maxG} 的數字`);
       const cap = groupCap(m);
-      if (cap && Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group === data.group).length >= cap)
+      if (cap && !solo && Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group === data.group).length >= cap)
         return toast(`${groupLabel(data.group)}已經額滿了（每組只能 ${cap} 人作答）`);
       saveProfile(data);
       try {

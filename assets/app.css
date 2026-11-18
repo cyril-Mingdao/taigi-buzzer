@@ -557,3 +557,13 @@ body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select
   body.fit .lobby > div:last-child { align-self: stretch; overflow: hidden; }
   body.fit .lobby .cards.gcards { flex: 1; }
 }
+
+/* ── v40：投影等候畫面多欄排列——左欄排滿才往右欄（欄數 --gcols、字級 --gfs 由 index.html fitLobby() 計算） ── */
+@media (min-width: 901px) {
+  body.fit .lobby .cards.gcards { display: block; column-count: var(--gcols, 1); column-fill: auto; column-gap: calc(var(--gfs) * 1.2); overflow: hidden; }
+  body.fit .gcards .grow { break-inside: avoid; margin-bottom: calc(var(--gfs) * .45); }
+  body.fit .gcards.solo .grow { display: block; break-inside: auto; margin: 0; }
+  body.fit .gcards.solo .gitems { display: block; }
+  body.fit .gcards.solo .pcard { display: block; break-inside: avoid; margin-bottom: calc(var(--gfs) * .45); }
+}
+.gcards.solo .grow { display: block; }

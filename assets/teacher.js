@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=39';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=39';
+} from './core.js?v=40';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=40';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -114,10 +114,14 @@ export const cleanCap = (v) => {
   const n = Number(String(v ?? '').replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).trim());
   return Number.isInteger(n) && n >= 1 && n <= 99 ? n : null;
 };
-/** 建教室時老師輸入的每組作答數與組數（只接受合法值）。 */
+/** v40：「個人」模式（groupMode none）時 groupCap 當作「作答人數上限」，預設 50。 */
+export const SOLO_CAP = 50;
+export const soloCap = (m) => (m.groupMode === 'none' ? Math.max(1, Number(m.groupCap) || SOLO_CAP) : 0);
+/** 建教室時老師輸入的每組作答數與組數（只接受合法值）。groupCount＝'solo' 為個人模式。 */
 function pickGroupOpts({ groupCap, groupCount } = {}) {
   const o = {};
   const c = cleanCap(groupCap);
+  if (groupCount === 'solo') { o.groupMode = 'none'; o.groupCap = c || SOLO_CAP; return o; }
   if (c) { o.groupMode = 'cap'; o.groupCap = c; }
   const n = Number(groupCount);
   if (Number.isInteger(n) && n >= 2 && n <= 20) o.groupCount = n;
@@ -125,17 +129,19 @@ function pickGroupOpts({ groupCap, groupCount } = {}) {
 }
 /** 「每組作答數」（老師輸入數字）＋「組數」：建教室表單、等候畫面、手機遙控「加入」分頁、設定共用。
     withAttr＝true 時用 data-set，改了直接寫進教室設定；false 時給建教室表單用 id。
-    教室若是舊的分組規則（個人賽等），輸入每組作答數後會改成「每組作答數自訂」。 */
+    v40：組數多一個「個人」選項；選個人時數字框改成「作答人數上限」（預設 50）。 */
 export function groupSettingsHTML(m, { withAttr = true } = {}) {
-  const opt = (obj, cur) => Object.entries(obj).map(([v, t]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${t}</option>`).join('');
-  const gcs = Object.fromEntries(Array.from({ length: 19 }, (_, i) => [i + 2, `${i + 2} 組`]));
+  const opt = (list, cur) => list.map(([v, t]) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${t}</option>`).join('');
+  const solo = m.groupMode === 'none';
+  // 用陣列保持順序（物件的數字鍵會排到 'solo' 前面）
+  const gcs = [['solo', '個人'], ...Array.from({ length: 19 }, (_, i) => [i + 2, `${i + 2} 組`])];
   const a = (set, id) => (withAttr ? `data-set="${set}"` : `id="${id}"`);
-  const cap = groupCap(m);
+  const cap = solo ? soloCap(m) : groupCap(m);
   const note = withAttr && !cap ? `<small class="muted">目前：${esc(GROUP_MODES[m.groupMode] || '')}（不限）</small>` : '';
   return `<div class="group-set">
-    <label>每組作答數<input ${a('groupCap', 'gCap')} type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2"
-      value="${cap || ''}" placeholder="例如 2" autocomplete="off">${note}</label>
-    <label>組數<select ${a('groupCount', 'gCount')} data-num>${opt(gcs, m.groupCount)}</select></label></div>`;
+    <label><span data-caplabel>${solo ? '作答人數上限' : '每組作答數'}</span><input ${a('groupCap', 'gCap')} type="text" inputmode="numeric" pattern="[0-9]*" maxlength="2"
+      value="${cap || ''}" placeholder="例如 ${solo ? SOLO_CAP : 2}" autocomplete="off">${note}</label>
+    <label>組別<select ${a('groupCount', 'gCount')}>${opt(gcs, solo ? 'solo' : m.groupCount)}</select></label></div>`;
 }
 
 export const teacherName = (u) => String((u && (u.displayName || u.email)) || '老師').slice(0, 40);
@@ -193,6 +199,12 @@ export function makeActions(fb, rid, getState) {
 
   const singleConflict = (uid, s, alsoTaken = new Map()) => {
     const p = s.players[uid];
+    // v40：個人模式——已核准人數達「作答人數上限」就不能再核准（回傳 -1）
+    const sc = soloCap(s.meta);
+    if (sc && p) {
+      const n = Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved).length + (alsoTaken.get(0) || 0);
+      return n >= sc ? -1 : null;
+    }
     const cap = groupCap(s.meta);
     if (!cap || !p || !p.group) return null;
     const n = Object.entries(s.players).filter(([u, q]) => u !== uid && q.approved && q.group === p.group).length + (alsoTaken.get(p.group) || 0);
@@ -272,6 +284,7 @@ export function makeActions(fb, rid, getState) {
     approve(uid) {
       const s = getState();
       const g = singleConflict(uid, s);
+      if (g === -1) return toast(`已經額滿了（作答人數上限 ${soloCap(s.meta)} 人）`);
       if (g) return toast(`${groupLabel(g)}已經額滿了（每組作答數 ${groupCap(s.meta)}）`);
       const back = takeScore(uid);
       return fb.update(r(`/players/${uid}`), { approved: true, score: (s.players[uid].score || 0) + back }).catch((e) => toast(authErrorText(e)));
@@ -283,7 +296,8 @@ export function makeActions(fb, rid, getState) {
       for (const [uid, p] of Object.entries(s.players)) {
         if (p.approved) continue;
         if (singleConflict(uid, s, taken)) continue;
-        if (p.group) taken.set(p.group, (taken.get(p.group) || 0) + 1);
+        if (soloCap(s.meta)) taken.set(0, (taken.get(0) || 0) + 1);
+        else if (p.group) taken.set(p.group, (taken.get(p.group) || 0) + 1);
         patch[`${uid}/approved`] = true;
         patch[`${uid}/score`] = (p.score || 0) + takeScore(uid);
       }
@@ -375,7 +389,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=39';
+export { qtypeLabel } from './core.js?v=40';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -935,8 +949,16 @@ export function bindControls(root, act, { onCleared } = {}) {
     if (el.dataset.set === 'qtype') { act.setQtype(el.value); return; }
     if (el.dataset.set === 'groupCap') {
       const c = cleanCap(el.value);
-      if (!c) { toast('每組作答數請輸入 1～99 的數字'); return; }
-      act.setMeta({ groupCap: c, groupMode: 'cap' });
+      const solo = act.getMeta().groupMode === 'none';
+      if (!c) { toast(`${solo ? '作答人數上限' : '每組作答數'}請輸入 1～99 的數字`); return; }
+      act.setMeta(solo ? { groupCap: c } : { groupCap: c, groupMode: 'cap' });
+      return;
+    }
+    if (el.dataset.set === 'groupCount') {
+      // v40：選「個人」＝不分組、作答人數上限預設 50；從個人切回分組時每組作答數回到 2
+      const m = act.getMeta();
+      if (el.value === 'solo') { if (m.groupMode !== 'none') act.setMeta({ groupMode: 'none', groupCap: SOLO_CAP }); return; }
+      act.setMeta(m.groupMode === 'none' ? { groupCount: Number(el.value), groupMode: 'cap', groupCap: 2 } : { groupCount: Number(el.value) });
       return;
     }
     if (el.dataset.set === 'className') {

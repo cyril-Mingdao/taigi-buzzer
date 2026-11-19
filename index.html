@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=41">
-<link rel="stylesheet" href="assets/spell.css?v=41">
+<link rel="stylesheet" href="assets/app.css?v=42">
+<link rel="stylesheet" href="assets/spell.css?v=42">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, playerSorter, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=41';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, playerSorter, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=42';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML, cleanCap,
-} from './assets/teacher.js?v=41';
-import { sound } from './assets/sound.js?v=41';
+} from './assets/teacher.js?v=42';
+import { sound } from './assets/sound.js?v=42';
 
 const main = $('#main');
 /** v37：等候畫面把已排序的 [uid, player] 依組別切成一列一組。 */
@@ -75,7 +75,12 @@ function fitLobby() {
   const fitMode = document.body.classList.contains('fit') && window.matchMedia('(min-width: 901px)').matches;
   if (!fitMode) { main.style.removeProperty('--gfs'); main.style.removeProperty('--gcols'); return; }
   // 多欄時卡片寬度受欄寬限制，姓名不可被截斷：每張卡片內容也要放得下
-  const cardsOk = () => [...box.querySelectorAll('.pcard .pc-name')].every((n) => n.scrollWidth <= n.clientWidth + 1);
+  // v42：多欄時一列（組別標籤＋卡片）可能比欄寬還寬，卡片會蓋到右邊那欄（box.scrollWidth 偵測不到），逐張檢查不超出所在列
+  const cardsOk = () => [...box.querySelectorAll('.pcard .pc-name')].every((n) => n.scrollWidth <= n.clientWidth + 1)
+    && [...box.querySelectorAll('.grow')].every((g) => {
+      const r = g.getBoundingClientRect().right + 1;
+      return [...g.querySelectorAll('.glabel, .pcard')].every((c) => c.getBoundingClientRect().right <= r);
+    });
   const fits = (px) => { main.style.setProperty('--gfs', `${px}px`); return box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1 && cardsOk(); };
   const best = (cols) => {
     main.style.setProperty('--gcols', cols);

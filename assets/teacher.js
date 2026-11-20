@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, playerSorter, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=42';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=42';
+} from './core.js?v=43';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=43';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -389,7 +389,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=42';
+export { qtypeLabel } from './core.js?v=43';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 
@@ -491,17 +491,23 @@ export function liveAnswersHTML(s) {
   const dist = tally || opts.map((o) => `<span class="dist-item ${revealed && String(m.answer).includes(o) ? 'correct' : ''}">
     <b>${optionText(o)}</b>${counts[o]}</span>`).join('');
   const off = (uid) => (s.presence[uid] ? '' : ' offline');
+  // v43：全班同一班級時省略班級字樣（手機寬度有限），答案移到每列最右邊的大欄
+  const oneCls = new Set(players.map(([, p]) => p.cls || '')).size <= 1;
+  const sub = (p) => [oneCls || !p.cls || p.cls === OTHER_CLASS ? '' : p.cls, p.group ? groupLabel(p.group) : ''].filter(Boolean).join('・');
+  const subHTML = (p) => (sub(p) ? `<small>${esc(sub(p))}</small>` : '');
   const doneRows = done.map(([uid, p], i) => {
     const a = s.answers[uid];
     const dt = typeof m.openAt === 'number' ? `${Math.max(0, (a.at - m.openAt) / 1000).toFixed(1)}s` : '';
     const mark = !revealed ? '' : answerMatches(a.c, m.answer) ? 'right' : 'wrong';
     return `<li class="${mark}${off(uid)}"><span class="rank">${i + 1}</span>
-      <span class="who"><span class="nm">${esc(playerLabel(p))}</span><span class="pick">${optionText(a.c)}</span>${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span>
+      <span class="who"><span class="nm">${esc(p.name)}</span>${subHTML(p)}</span>
       <span class="dt">${dt}</span>
-      <span class="gain">${revealed ? (pts[uid] ? `+${pts[uid]}` : '✘') : ''}</span></li>`;
+      <span class="gain">${revealed ? (pts[uid] ? `+${pts[uid]}` : '✘') : ''}</span>
+      <span class="pick${String(a.c || '').length > 3 ? ' long' : ''}">${optionText(a.c)}</span></li>`;
   }).join('');
   const waitRows = wait.map(([uid, p]) => `<li class="waiting${off(uid)}"><span class="rank">–</span>
-    <span class="who"><span class="nm">${esc(playerLabel(p))}</span><span class="pick none">未作答</span>${p.group ? `<small>${groupLabel(p.group)}</small>` : ''}</span></li>`).join('');
+    <span class="who"><span class="nm">${esc(p.name)}</span>${subHTML(p)}</span>
+    <span class="pick none">未作答</span></li>`).join('');
   return `<div class="live-ans">
     <div class="live-head">已作答 <b>${done.length}</b> / ${players.length}
       ${wait.length ? `<span class="muted">（未作答 ${wait.length}）</span>` : '<span class="ok-all">全員作答</span>'}</div>

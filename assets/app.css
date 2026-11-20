@@ -593,3 +593,9 @@ body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select
 .live-list li.offline .who::after { font-size: .7em; }
 .live-list > li > .pick.long { font-size: .9em; padding: 3px 6px; letter-spacing: -.02em; }
 .live-list .who { min-width: 5.2em; }
+
+/* ── v44：投影等候畫面的出場動畫只淡入、不縮放。
+   fitLobby() 試不同欄數時，column-count 改變會讓瀏覽器重建卡片而重播動畫；
+   scale(.6) 會讓 scrollHeight／scrollWidth 量到縮小中的卡片 → 誤判放得下（核准後溢出）。opacity 不影響版面量測。 ── */
+@keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+.gcards .pcard { animation-name: fadein; }

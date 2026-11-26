@@ -9,8 +9,8 @@ import {
   serverNow, esc, $, toast, ask, playerLabel, groupLabel, byGroupSeat, playerSorter, rankBuzzes, leaderboard,
   DEFAULT_META, GROUP_MODES, PENALTIES, QTYPES, optionList, optionText, isChoice,
   groupCap, groupScored, CORRECT_PTS, roundPoints, isMulti, isSpell, isSort, isSortCode, sortChipsHTML, SORT_N, answerMatches, SAVE_ENDPOINT, googleAccessToken, OTHER_CLASS, cleanClassName, rocDate,
-} from './core.js?v=45';
-import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=45';
+} from './core.js?v=46';
+import { parseTailo, encode, decode, spellText, spellChipHTML, spellParts, initialCat, finalCat, toneFinal, SPELL_PTS } from './spell.js?v=46';
 
 /* ══ 登入關卡 ══════════════════════════════════════════════════════ */
 
@@ -214,7 +214,23 @@ export function makeActions(fb, rid, getState) {
   return {
     open: () => meta({ phase: 'game', state: 'open', openAt: fb.serverTimestamp() }),
     lock: () => meta({ state: 'locked' }),
-    next: () => meta({ phase: 'game', state: 'idle', round: String((parseInt(getState().meta.round, 10) || 0) + 1), openAt: null, answer: null }),
+    /** v46：本題有人作答卻還沒選標準答案（搶答題：有人搶答卻還沒按 ✓／✗）就按下一題 → 先提示，避免分數沒加到。 */
+    async next() {
+      const s = getState();
+      const m = s.meta;
+      if (m.state !== 'idle' && m.phase !== 'ended') {
+        const n = isChoice(m) ? Object.keys(s.answers || {}).length : (s.ranked || []).length;
+        const pending = isChoice(m) ? n && !m.answer : n && !Object.values(s.judges || {}).some(Boolean);
+        if (pending && !(await ask({
+          title: isChoice(m) ? '還沒選標準答案' : '還沒判定對錯',
+          message: isChoice(m)
+            ? `本題已有 ${n} 人作答，但還沒選標準答案，直接進入下一題的話，這題大家都不會得分。`
+            : `本題已有 ${n} 人搶答，但還沒按 ✓／✗，直接進入下一題的話，這題不會加分。`,
+          ok: '仍要下一題', cancel: isChoice(m) ? '回去選答案' : '回去判定', danger: true,
+        }))) return;
+      }
+      return meta({ phase: 'game', state: 'idle', round: String((parseInt(getState().meta.round, 10) || 0) + 1), openAt: null, answer: null });
+    },
     lobby: () => meta({ phase: 'lobby', state: 'idle' }),
     game: () => meta({ phase: 'game' }),
     async end() {
@@ -389,7 +405,7 @@ export function remainingSec(m) {
 }
 
 export const STATE_TEXT = { idle: '準備中', open: '搶答中', locked: '已鎖定' };
-export { qtypeLabel } from './core.js?v=45';
+export { qtypeLabel } from './core.js?v=46';
 export const stateText = (m) => (m.phase === 'ended' ? '活動結束'
   : m.state === 'open' && isChoice(m) ? '作答中' : STATE_TEXT[m.state]);
 

@@ -14,8 +14,8 @@
 <meta name="copyright" content="© 2026 詹宗龍（臺中明道中學）。保留一切權利。">
 <title>課堂搶答・投影</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💭</text></svg>">
-<link rel="stylesheet" href="assets/app.css?v=46">
-<link rel="stylesheet" href="assets/spell.css?v=46">
+<link rel="stylesheet" href="assets/app.css?v=47">
+<link rel="stylesheet" href="assets/spell.css?v=47">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -38,12 +38,12 @@
   <div class="panel settings" id="dSettings"></div>
 </aside>
 <script type="module">
-import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, playerSorter, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=46';
+import { newRoomId, normalizeRoom, esc, $, toast, groupLabel, byGroupSeat, playerSorter, isChoice, QTYPES, googleSignIn, authErrorText, DEFAULT_META, GROUP_MODES } from './assets/core.js?v=47';
 import {
   bootFirebase, isTeacherUser, teacherName, mountAccountMenu, listMyRooms, createRoom, watchRoom, makeActions, runJobs, remainingSec,
   patch, orderHTML, answerHTML, liveChipsHTML, notBuzzedHTML, pendingBarHTML, boardHTML, podiumHTML, controlsHTML, playersHTML, settingsHTML, bindControls, stateText, syncLive, qtypeLabel, groupSettingsHTML, cleanCap,
-} from './assets/teacher.js?v=46';
-import { sound } from './assets/sound.js?v=46';
+} from './assets/teacher.js?v=47';
+import { sound } from './assets/sound.js?v=47';
 
 const main = $('#main');
 /** v37：等候畫面把已排序的 [uid, player] 依組別切成一列一組。 */
@@ -72,6 +72,15 @@ function fitLobby() {
   const box = main.querySelector('.gcards');
   if (!box) return;
   if (fitObs && box !== fitBox) { if (fitBox) fitObs.unobserve(fitBox); fitObs.observe(box); fitBox = box; }
+  // v47：分組時每張卡片同寬（以最長姓名為準，單位 em 隨字級縮放），組別＋兩人排成整齊的格子
+  if (!box.classList.contains('solo')) {
+    main.style.removeProperty('--pcw');
+    box.classList.add('measure');
+    let em = 0;
+    for (const c of box.querySelectorAll('.pcard')) em = Math.max(em, c.offsetWidth / (parseFloat(getComputedStyle(c).fontSize) || 16));
+    box.classList.remove('measure');
+    if (em) main.style.setProperty('--pcw', `calc(var(--gfs) * ${(em + 0.2).toFixed(2)})`);
+  }
   const fitMode = document.body.classList.contains('fit') && window.matchMedia('(min-width: 901px)').matches;
   if (!fitMode) { main.style.removeProperty('--gfs'); main.style.removeProperty('--gcols'); return; }
   // 多欄時卡片寬度受欄寬限制，姓名不可被截斷：每張卡片內容也要放得下
@@ -82,7 +91,7 @@ function fitLobby() {
   const cardsOk = () => [...box.querySelectorAll('.pcard .pc-name')].every((n) => n.scrollWidth <= n.clientWidth + 1)
     && [...box.querySelectorAll('.grow')].every((g) => {
       const r = rightOf(g) + 1;
-      return [...g.querySelectorAll('.glabel, .pcard')].every((c) => rightOf(c) <= r && rightOf(c) <= box.clientWidth + 1);
+      return [...g.querySelectorAll('.glabel, .pcard')].every((c) => rightOf(c) <= r && rightOf(c) <= box.clientWidth - 1); // v47：offset 值取整數，留 1px 避免小數誤差超出
     });
   const fits = (px) => { main.style.setProperty('--gfs', `${px}px`); return box.scrollHeight <= box.clientHeight + 1 && box.scrollWidth <= box.clientWidth + 1 && cardsOk(); };
   const best = (cols) => {

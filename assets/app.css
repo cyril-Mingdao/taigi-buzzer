@@ -599,3 +599,6 @@ body:has(.sort-ghost) { cursor: grabbing; user-select: none; -webkit-user-select
    scale(.6) 會讓 scrollHeight／scrollWidth 量到縮小中的卡片 → 誤判放得下（核准後溢出）。opacity 不影響版面量測。 ── */
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 .gcards .pcard { animation-name: fadein; }
+
+/* ── v45：學生選項左右直排——左欄 A、B(、C…)，右欄接續（依欄往下排） ── */
+.opts { grid-auto-flow: column; grid-template-rows: repeat(var(--rows, 2), minmax(0, 1fr)); grid-auto-rows: unset; }

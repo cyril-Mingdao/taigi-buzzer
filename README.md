@@ -30,12 +30,6 @@
 與 taigi-quiz 相同的 4 個帳號，寫在 `assets/core.js` 的 `TEACHERS`（前端提示）與 `database.rules.json`（真正的權限），**兩處要一起改**。
 
 ## Firebase 設定（一次性）
-1. <https://console.firebase.google.com> 建立新專案。
-2. Realtime Database → 建立 → asia-southeast1 → 鎖定模式。
-3. Authentication → Sign-in method → 啟用 **Google** 與 **匿名**。
-4. Authentication → Settings → 已授權網域：加入 `cyril-mingdao.github.io`。
-5. 專案設定 → 新增網頁應用程式 → 把 config 填進 `config/firebase-config.js`（由 `firebase-config.example.js` 複製）。
-6. Realtime Database → 規則：貼上 `database.rules.json` → 發布。
 
 ## 個資
 學生姓名只存在該教室內；老師按「結束並清除資料」即整個刪除，24 小時以上的舊教室在老師下次開房時自動刪除。
